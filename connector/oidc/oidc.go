@@ -13,8 +13,8 @@ import (
 	"github.com/coreos/go-oidc"
 	"golang.org/x/oauth2"
 
-	"github.com/dexidp/dex/connector"
-	"github.com/dexidp/dex/pkg/log"
+	"github.com/partitio/dex/connector"
+	"github.com/partitio/dex/pkg/log"
 )
 
 // Config holds configuration options for OpenID Connect logins.
@@ -44,7 +44,7 @@ type Config struct {
 // Domains that don't support basic auth. golang.org/x/oauth2 has an internal
 // list, but it only matches specific URLs, not top level domains.
 var brokenAuthHeaderDomains = []string{
-	// See: https://github.com/dexidp/dex/issues/859
+	// See: https://github.com/partitio/dex/issues/859
 	"okta.com",
 	"oktapreview.com",
 }

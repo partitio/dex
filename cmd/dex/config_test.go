@@ -6,10 +6,10 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/kylelemons/godebug/pretty"
 
-	"github.com/dexidp/dex/connector/mock"
-	"github.com/dexidp/dex/connector/oidc"
-	"github.com/dexidp/dex/storage"
-	"github.com/dexidp/dex/storage/sql"
+	"github.com/partitio/dex/connector/mock"
+	"github.com/partitio/dex/connector/oidc"
+	"github.com/partitio/dex/storage"
+	"github.com/partitio/dex/storage/sql"
 )
 
 var _ = yaml.YAMLToJSON

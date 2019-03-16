@@ -7,8 +7,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/dexidp/dex/storage"
-	"github.com/dexidp/dex/storage/conformance"
+	"github.com/partitio/dex/storage"
+	"github.com/partitio/dex/storage/conformance"
 )
 
 const testKubeConfigEnv = "DEX_KUBECONFIG"

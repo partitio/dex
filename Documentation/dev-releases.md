@@ -8,7 +8,7 @@ From this, Quay will build and tag an image via a build trigger.
 
 This requires the following permissions.
 
-* Push access to the github.com/dexidp/dex git repo.
+* Push access to the github.com/partitio/dex git repo.
 
 ## Tagging the release
 
@@ -39,7 +39,7 @@ git push git@github.com:dexidp/dex.git v2.0.0
 Draft releases on GitHub and summarize the changes since the last release. See
 previous releases for the expected format.
 
-https://github.com/dexidp/dex/releases
+https://github.com/partitio/dex/releases
 
 ## Minor releases - create a branch
 

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/dexidp/dex/pkg/log"
+	"github.com/partitio/dex/pkg/log"
 )
 
 // Tests for this code are in the "memory" package, since this package doesn't

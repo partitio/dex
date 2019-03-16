@@ -50,7 +50,7 @@ connectors:
 
     # List of additional scopes to request in token response
     # Default is profile and email
-    # Full list at https://github.com/dexidp/dex/blob/master/Documentation/custom-scopes-claims-clients.md
+    # Full list at https://github.com/partitio/dex/blob/master/Documentation/custom-scopes-claims-clients.md
     # scopes:
     #  - profile
     #  - email
@@ -63,6 +63,6 @@ connectors:
 ```
 
 [oidc-doc]: openid-connect.md
-[issue-863]: https://github.com/dexidp/dex/issues/863
-[issue-1065]: https://github.com/dexidp/dex/issues/1065
+[issue-863]: https://github.com/partitio/dex/issues/863
+[issue-1065]: https://github.com/partitio/dex/issues/1065
 [azure-ad-v1]: https://github.com/coreos/go-oidc/issues/133

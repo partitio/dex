@@ -9,8 +9,8 @@ import (
 
 	"github.com/coreos/etcd/clientv3"
 
-	"github.com/dexidp/dex/pkg/log"
-	"github.com/dexidp/dex/storage"
+	"github.com/partitio/dex/pkg/log"
+	"github.com/partitio/dex/storage"
 )
 
 const (

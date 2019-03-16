@@ -1,4 +1,4 @@
-module github.com/dexidp/dex
+module github.com/partitio/dex
 
 require (
 	github.com/beevik/etree v0.0.0-20161216042344-4cd0dd976db8

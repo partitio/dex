@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
-	"github.com/dexidp/dex/connector"
-	"github.com/dexidp/dex/pkg/log"
+	"github.com/partitio/dex/connector"
+	"github.com/partitio/dex/pkg/log"
 	dsig "github.com/russellhaering/goxmldsig"
 	"github.com/russellhaering/goxmldsig/etreeutils"
 )

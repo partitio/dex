@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	"github.com/dexidp/dex/api"
+	"github.com/partitio/dex/api"
 )
 
 func newDexClient(hostAndPort, caPath, clientCrt, clientKey string) (api.DexClient, error) {

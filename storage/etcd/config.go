@@ -7,8 +7,8 @@ import (
 	"github.com/coreos/etcd/clientv3/namespace"
 	"github.com/coreos/etcd/pkg/transport"
 
-	"github.com/dexidp/dex/pkg/log"
-	"github.com/dexidp/dex/storage"
+	"github.com/partitio/dex/pkg/log"
+	"github.com/partitio/dex/storage"
 )
 
 var (

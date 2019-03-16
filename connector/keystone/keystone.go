@@ -9,8 +9,8 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	"github.com/dexidp/dex/connector"
-	"github.com/dexidp/dex/pkg/log"
+	"github.com/partitio/dex/connector"
+	"github.com/partitio/dex/pkg/log"
 )
 
 type conn struct {
