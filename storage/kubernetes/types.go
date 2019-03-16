@@ -79,7 +79,7 @@ var thirdPartyResources = []k8sapi.ThirdPartyResource{
 			Name: "connector.oidc.coreos.com",
 		},
 		TypeMeta:    tprMeta,
-		Description: "Connectors available for login",
+		Description: "Servers available for login",
 		Versions:    []k8sapi.APIVersion{{Name: "v1"}},
 	},
 }
@@ -699,7 +699,7 @@ func toStorageConnector(c Connector) storage.Connector {
 	}
 }
 
-// ConnectorList is a list of Connectors.
+// ConnectorList is a list of Servers.
 type ConnectorList struct {
 	k8sapi.TypeMeta `json:",inline"`
 	k8sapi.ListMeta `json:"metadata,omitempty"`

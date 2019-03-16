@@ -733,7 +733,7 @@ func (s *Server) handleAuthCode(w http.ResponseWriter, r *http.Request, client s
 	reqRefresh := func() bool {
 		// Ensure the connector supports refresh tokens.
 		//
-		// Connectors like `saml` do not implement RefreshConnector.
+		// Servers like `saml` do not implement RefreshConnector.
 		conn, err := s.getConnector(authCode.ConnectorID)
 		if err != nil {
 			s.logger.Errorf("connector with ID %q not found: %v", authCode.ConnectorID, err)

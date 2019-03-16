@@ -48,7 +48,7 @@ import (
 //         nameAttr: name
 //
 type Config struct {
-	Connectors []*dldap.Config `json:"connectors"`
+	Servers []*dldap.Config `json:"servers"`
 	// UsernamePrompt allows users to override the username attribute (displayed
 	// in the username/password prompt). If unset, the handler will use
 	// "Username".
@@ -74,14 +74,14 @@ func (c *Config) OpenConnector(logger log.Logger) (interface {
 }
 
 func (c *Config) openConnector(logger log.Logger) (*ldapConnector, error) {
-	var acs []*aggregatedConnector
-	for _, acc := range c.Connectors {
+	var acs []*ldapServer
+	for _, acc := range c.Servers {
 		ac, err := acc.OpenConnector(logger)
 		if err != nil {
 			logger.Errorf("invalid aggregated ldap: %s", err)
 			continue
 		}
-		acs = append(acs, &aggregatedConnector{*acc, ac})
+		acs = append(acs, &ldapServer{*acc, ac})
 	}
 	if len(acs) == 0 {
 		return nil, errors.New("no valid aggregated connectors supplied")
@@ -89,7 +89,7 @@ func (c *Config) openConnector(logger log.Logger) (*ldapConnector, error) {
 	return &ldapConnector{*c, acs, logger}, nil
 }
 
-type aggregatedConnector struct {
+type ldapServer struct {
 	conf dldap.Config
 	conn interface {
 		connector.Connector
@@ -100,7 +100,7 @@ type aggregatedConnector struct {
 
 type ldapConnector struct {
 	Config
-	ldapConnectors []*aggregatedConnector
+	ldapConnectors []*ldapServer
 	logger         log.Logger
 }
 
@@ -125,7 +125,7 @@ func (c *ldapConnector) Login(ctx context.Context, s connector.Scopes, username,
 	var wg sync.WaitGroup
 	for _, l := range c.ldapConnectors {
 		wg.Add(1)
-		go func(ag *aggregatedConnector) {
+		go func(ag *ldapServer) {
 			defer wg.Done()
 			i, ok, err := ag.conn.Login(ctx, s, username, password)
 			if err != nil {
@@ -157,7 +157,7 @@ func (c *ldapConnector) Refresh(ctx context.Context, s connector.Scopes, ident c
 	if err := json.Unmarshal(ident.ConnectorData, &data); err != nil {
 		return ident, fmt.Errorf("ldap-aggregator: failed to unmarshal internal data: %v", err)
 	}
-	var a *aggregatedConnector
+	var a *ldapServer
 	for _, ac := range c.ldapConnectors {
 		if ac.conf.Host == data.Source {
 			a = ac

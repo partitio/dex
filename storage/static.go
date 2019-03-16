@@ -170,8 +170,8 @@ type staticConnectorsStorage struct {
 	connectorsByID map[string]Connector
 }
 
-// WithStaticConnectors returns a storage with a read-only set of Connectors. Write actions,
-// such as updating existing Connectors, will fail.
+// WithStaticConnectors returns a storage with a read-only set of Servers. Write actions,
+// such as updating existing Servers, will fail.
 func WithStaticConnectors(s Storage, staticConnectors []Connector) Storage {
 	connectorsByID := make(map[string]Connector, len(staticConnectors))
 	for _, c := range staticConnectors {
