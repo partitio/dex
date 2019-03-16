@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/partitio/dex/connector/ldap-aggregator"
 	"net/http"
 	"net/url"
 	"path"
@@ -16,6 +17,9 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/felixge/httpsnoop"
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 	"github.com/partitio/dex/connector"
 	"github.com/partitio/dex/connector/authproxy"
 	"github.com/partitio/dex/connector/bitbucketcloud"
@@ -30,9 +34,6 @@ import (
 	"github.com/partitio/dex/connector/saml"
 	"github.com/partitio/dex/pkg/log"
 	"github.com/partitio/dex/storage"
-	"github.com/felixge/httpsnoop"
-	"github.com/gorilla/handlers"
-	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -440,6 +441,7 @@ var ConnectorsConfig = map[string]func() ConnectorConfig{
 	"mockCallback":    func() ConnectorConfig { return new(mock.CallbackConfig) },
 	"mockPassword":    func() ConnectorConfig { return new(mock.PasswordConfig) },
 	"ldap":            func() ConnectorConfig { return new(ldap.Config) },
+	"ldap-aggregator": func() ConnectorConfig { return new(ldapaggregator.Config) },
 	"github":          func() ConnectorConfig { return new(github.Config) },
 	"gitlab":          func() ConnectorConfig { return new(gitlab.Config) },
 	"oidc":            func() ConnectorConfig { return new(oidc.Config) },
