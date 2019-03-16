@@ -11,6 +11,10 @@ html, body {
   flex-direction: column;
 }
 
+footer {
+  box-shadow: 0 -1px 10px rgba(0, 0, 0, 0.2);
+}
+
 .theme-navbar {
   background-color: #fff;
   box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
@@ -55,9 +59,10 @@ html, body {
 
 .theme-panel {
   background-color: #fff;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.5);
   padding: 30px;
   flex-grow: 1;
+  border-radius: 3px;
 }
 
 .theme-btn-provider {
@@ -114,8 +119,9 @@ html, body {
 
 .theme-form-input:focus,
 .theme-form-input:active {
-  border-color: #66AFE9;
-  outline: none;
+  border-color: #666;
+  border-width: 1px;
+  outline: #666;
 }
 
 .theme-form-label {

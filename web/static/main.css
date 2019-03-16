@@ -128,3 +128,19 @@ body {
 .dex-error-box {
   margin: 20px auto;
 }
+
+footer {
+  background-color: #fff;
+  height: 46px;
+  overflow: hidden;
+  padding: 0 10px;
+}
+
+footer div {
+  width: 100%;
+  height: 100%;
+  color: #333;
+  line-height: 36px;
+  padding: 6px 12px;
+  text-align: center;
+}
