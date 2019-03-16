@@ -1,0 +1,8 @@
+{{ template "header.gohtml" . }}
+{{- /*gotype: github.com/partitio/dex/server.ErrTmplData*/ -}}
+<div class="theme-panel">
+  <h2 class="theme-heading">{{ .ErrType }}</h2>
+  <p>{{ .ErrMsg }}</p>
+</div>
+
+{{ template "footer.gohtml" . }}
