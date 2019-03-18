@@ -12,7 +12,7 @@ import (
 
 	"github.com/partitio/dex/api"
 	"github.com/partitio/dex/pkg/log"
-	"github.com/partitio/dex/server/internal"
+	"github.com/partitio/dex/server/pb"
 	"github.com/partitio/dex/storage"
 	"github.com/partitio/dex/storage/memory"
 )
@@ -235,7 +235,7 @@ func TestRefreshToken(t *testing.T) {
 		t.Fatalf("create offline session: %v", err)
 	}
 
-	subjectString, err := internal.Marshal(&internal.IDTokenSubject{
+	subjectString, err := pb.Marshal(&pb.IDTokenSubject{
 		UserId: r.Claims.UserID,
 		ConnId: r.ConnectorID,
 	})

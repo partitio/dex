@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 
 	"github.com/ghodss/yaml"
@@ -45,7 +46,7 @@ connectors:
   config:
     issuer: https://accounts.google.com
     clientID: foo
-    clientSecret: bar
+    clientSecret: ba$$r
     redirectURI: http://127.0.0.1:5556/dex/callback/google
 
 enablePasswordDB: true
@@ -111,7 +112,7 @@ logger:
 				Config: &oidc.Config{
 					Issuer:       "https://accounts.google.com",
 					ClientID:     "foo",
-					ClientSecret: "bar",
+					ClientSecret: "ba$r",
 					RedirectURI:  "http://127.0.0.1:5556/dex/callback/google",
 				},
 			},
@@ -150,4 +151,22 @@ logger:
 		t.Errorf("got!=want: %s", diff)
 	}
 
+}
+
+func TestExpandEnv(t *testing.T) {
+	s := ExpandEnv("$$")
+	if s != "$" {
+		t.Errorf("got %s, should be $", s)
+	}
+	if err := os.Setenv("test", "TEST"); err != nil {
+		t.Fatal("failed to add test environment variable")
+	}
+	s = ExpandEnv("$test$$")
+	if s != "TEST$" {
+		t.Errorf("got %s, should be TEST$", s)
+	}
+	s = ExpandEnv("$$$test")
+	if s != "$TEST" {
+		t.Errorf("got %s, should be $TEST", s)
+	}
 }

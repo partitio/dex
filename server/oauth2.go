@@ -22,7 +22,7 @@ import (
 	jose "gopkg.in/square/go-jose.v2"
 
 	"github.com/partitio/dex/connector"
-	"github.com/partitio/dex/server/internal"
+	"github.com/partitio/dex/server/pb"
 	"github.com/partitio/dex/storage"
 )
 
@@ -284,12 +284,12 @@ func (s *Server) newIDToken(clientID string, claims storage.Claims, scopes []str
 	issuedAt := s.now()
 	expiry = issuedAt.Add(s.idTokensValidFor)
 
-	sub := &internal.IDTokenSubject{
+	sub := &pb.IDTokenSubject{
 		UserId: claims.UserID,
 		ConnId: connID,
 	}
 
-	subjectString, err := internal.Marshal(sub)
+	subjectString, err := pb.Marshal(sub)
 	if err != nil {
 		s.logger.Errorf("failed to marshal offline session ID: %v", err)
 		return "", expiry, fmt.Errorf("failed to marshal offline session ID: %v", err)

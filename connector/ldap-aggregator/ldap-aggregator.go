@@ -22,30 +22,31 @@ import (
 //
 //     type: ldap-aggregator
 //     config:
-//       host: ldap.example.com:636
+//       servers:
+//       - host: ldap.example.com:636
 //       # The following field is required if using port 389.
 //       # insecureNoSSL: true
-//       rootCA: /etc/dex/ldap.ca
-//       bindDN: uid=seviceaccount,cn=users,dc=example,dc=com
-//       bindPW: password
-//       userSearch:
-//         # Would translate to the query "(&(objectClass=person)(uid=<username>))"
-//         baseDN: cn=users,dc=example,dc=com
-//         filter: "(objectClass=person)"
-//         username: uid
-//         idAttr: uid
-//         emailAttr: mail
-//         nameAttr: name
-//       groupSearch:
-//         # Would translate to the query "(&(objectClass=group)(member=<user uid>))"
-//         baseDN: cn=groups,dc=example,dc=com
-//         filter: "(objectClass=group)"
-//         userAttr: uid
-//         # Use if full DN is needed and not available as any other attribute
-//         # Will only work if "DN" attribute does not exist in the record
-//         # userAttr: DN
-//         groupAttr: member
-//         nameAttr: name
+//         rootCA: /etc/dex/ldap.ca
+//         bindDN: uid=seviceaccount,cn=users,dc=example,dc=com
+//         bindPW: password
+//         userSearch:
+//           # Would translate to the query "(&(objectClass=person)(uid=<username>))"
+//           baseDN: cn=users,dc=example,dc=com
+//           filter: "(objectClass=person)"
+//           username: uid
+//           idAttr: uid
+//           emailAttr: mail
+//           nameAttr: name
+//         groupSearch:
+//           # Would translate to the query "(&(objectClass=group)(member=<user uid>))"
+//           baseDN: cn=groups,dc=example,dc=com
+//           filter: "(objectClass=group)"
+//           userAttr: uid
+//           # Use if full DN is needed and not available as any other attribute
+//           # Will only work if "DN" attribute does not exist in the record
+//           # userAttr: DN
+//           groupAttr: member
+//           nameAttr: name
 //
 type Config struct {
 	Servers []*dldap.Config `json:"servers"`
@@ -73,7 +74,7 @@ func (c *Config) OpenConnector(logger log.Logger) (interface {
 	return c.openConnector(logger)
 }
 
-func (c *Config) openConnector(logger log.Logger) (*ldapConnector, error) {
+func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, error) {
 	var acs []*ldapServer
 	for _, acc := range c.Servers {
 		ac, err := acc.OpenConnector(logger)
@@ -86,7 +87,7 @@ func (c *Config) openConnector(logger log.Logger) (*ldapConnector, error) {
 	if len(acs) == 0 {
 		return nil, errors.New("no valid aggregated connectors supplied")
 	}
-	return &ldapConnector{*c, acs, logger}, nil
+	return &ldapAggregatorConnector{*c, acs, logger}, nil
 }
 
 type ldapServer struct {
@@ -98,7 +99,7 @@ type ldapServer struct {
 	}
 }
 
-type ldapConnector struct {
+type ldapAggregatorConnector struct {
 	Config
 	ldapConnectors []*ldapServer
 	logger         log.Logger
@@ -111,11 +112,11 @@ type refreshData struct {
 }
 
 var (
-	_ connector.PasswordConnector = (*ldapConnector)(nil)
-	_ connector.RefreshConnector  = (*ldapConnector)(nil)
+	_ connector.PasswordConnector = (*ldapAggregatorConnector)(nil)
+	_ connector.RefreshConnector  = (*ldapAggregatorConnector)(nil)
 )
 
-func (c *ldapConnector) Login(ctx context.Context, s connector.Scopes, username, password string) (ident connector.Identity, validPass bool, err error) {
+func (c *ldapAggregatorConnector) Login(ctx context.Context, s connector.Scopes, username, password string) (ident connector.Identity, validPass bool, err error) {
 	type result struct {
 		ident     connector.Identity
 		validPass bool
@@ -142,7 +143,9 @@ func (c *ldapConnector) Login(ctx context.Context, s connector.Scopes, username,
 	for r := range results {
 		if r.validPass {
 			var err error
-			r.ident.ConnectorData, err = addSourceToConnectorData(r.ident.ConnectorData, r.source)
+			if r.ident.ConnectorData != nil {
+				r.ident.ConnectorData, err = addSourceToConnectorData(r.ident.ConnectorData, r.source)
+			}
 			if err != nil {
 				return r.ident, false, err
 			}
@@ -152,7 +155,7 @@ func (c *ldapConnector) Login(ctx context.Context, s connector.Scopes, username,
 	return connector.Identity{}, false, nil
 }
 
-func (c *ldapConnector) Refresh(ctx context.Context, s connector.Scopes, ident connector.Identity) (connector.Identity, error) {
+func (c *ldapAggregatorConnector) Refresh(ctx context.Context, s connector.Scopes, ident connector.Identity) (connector.Identity, error) {
 	var data refreshData
 	if err := json.Unmarshal(ident.ConnectorData, &data); err != nil {
 		return ident, fmt.Errorf("ldap-aggregator: failed to unmarshal internal data: %v", err)
@@ -193,6 +196,6 @@ func addSourceToConnectorData(data []byte, source string) ([]byte, error) {
 	return b, nil
 }
 
-func (c *ldapConnector) Prompt() string {
+func (c *ldapAggregatorConnector) Prompt() string {
 	return c.UsernamePrompt
 }

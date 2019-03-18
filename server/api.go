@@ -12,7 +12,7 @@ import (
 
 	"github.com/partitio/dex/api"
 	"github.com/partitio/dex/pkg/log"
-	"github.com/partitio/dex/server/internal"
+	"github.com/partitio/dex/server/pb"
 	"github.com/partitio/dex/storage"
 	"github.com/partitio/dex/version"
 )
@@ -255,8 +255,8 @@ func (d dexAPI) ListPasswords(ctx context.Context, req *api.ListPasswordReq) (*a
 }
 
 func (d dexAPI) ListRefresh(ctx context.Context, req *api.ListRefreshReq) (*api.ListRefreshResp, error) {
-	id := new(internal.IDTokenSubject)
-	if err := internal.Unmarshal(req.UserId, id); err != nil {
+	id := new(pb.IDTokenSubject)
+	if err := pb.Unmarshal(req.UserId, id); err != nil {
 		d.logger.Errorf("api: failed to unmarshal ID Token subject: %v", err)
 		return nil, err
 	}
@@ -291,8 +291,8 @@ func (d dexAPI) ListRefresh(ctx context.Context, req *api.ListRefreshReq) (*api.
 }
 
 func (d dexAPI) RevokeRefresh(ctx context.Context, req *api.RevokeRefreshReq) (*api.RevokeRefreshResp, error) {
-	id := new(internal.IDTokenSubject)
-	if err := internal.Unmarshal(req.UserId, id); err != nil {
+	id := new(pb.IDTokenSubject)
+	if err := pb.Unmarshal(req.UserId, id); err != nil {
 		d.logger.Errorf("api: failed to unmarshal ID Token subject: %v", err)
 		return nil, err
 	}

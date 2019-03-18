@@ -1,4 +1,4 @@
-package internal
+package pb
 
 import (
 	"encoding/base64"

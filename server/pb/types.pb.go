@@ -13,7 +13,7 @@ It has these top-level messages:
 	RefreshToken
 	IDTokenSubject
 */
-package internal
+package pb
 
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
