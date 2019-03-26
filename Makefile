@@ -5,7 +5,7 @@ export PATH := $(PWD)/bin:$(PATH)
 
 VERSION ?= $(shell ./scripts/git-version)
 
-DOCKER_REPO=quay.io/dexidp/dex
+DOCKER_REPO=partitio/dex
 DOCKER_IMAGE=$(DOCKER_REPO):$(VERSION)
 
 $( shell mkdir -p bin )
@@ -58,9 +58,12 @@ docker-image:
 	@sudo docker build -t $(DOCKER_IMAGE) .
 
 .PHONY: proto
-proto: bin/protoc bin/protoc-gen-go
-	@./bin/protoc --go_out=plugins=grpc:. --plugin=protoc-gen-go=./bin/protoc-gen-go api/*.proto
-	@./bin/protoc --go_out=. --plugin=protoc-gen-go=./bin/protoc-gen-go server/internal/*.proto
+proto: bin/protoc bin/protoc-gen-micro
+	@./bin/protoc --go_out=:. --micro_out=:. \
+		--plugin=protoc-gen-micro=./bin/protoc-gen-micro \
+		api/*.proto
+	@./bin/protoc --go_out=. \
+		server/pb/*.proto
 
 .PHONY: verify-proto
 verify-proto: proto
@@ -71,6 +74,9 @@ bin/protoc: scripts/get-protoc
 
 bin/protoc-gen-go:
 	@go install -v $(REPO_PATH)/vendor/github.com/golang/protobuf/protoc-gen-go
+
+bin/protoc-gen-micro:
+	@go install -v $(REPO_PATH)/vendor/github.com/micro/protoc-gen-micro
 
 bin/golint:
 	@go install -v $(REPO_PATH)/vendor/golang.org/x/lint/golint

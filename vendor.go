@@ -7,8 +7,9 @@ package main
 // file from being included in builds.
 
 import (
-        _ "github.com/golang/protobuf/protoc-gen-go"
-        _ "golang.org/x/lint/golint"
+	_ "github.com/golang/protobuf/protoc-gen-go"
+	_ "github.com/micro/protoc-gen-micro"
+	_ "golang.org/x/lint/golint"
 )
 
 func main() {}

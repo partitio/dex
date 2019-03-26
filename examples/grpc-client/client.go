@@ -9,13 +9,14 @@ import (
 	"io/ioutil"
 	"log"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
+	"github.com/micro/go-micro/client"
+	"github.com/micro/go-micro/transport"
 
 	"github.com/partitio/dex/api"
+	"github.com/partitio/dex/server"
 )
 
-func newDexClient(hostAndPort, caPath, clientCrt, clientKey string) (api.DexClient, error) {
+func newDexClient(caPath, clientCrt, clientKey string) (api.DexService, error) {
 	cPool := x509.NewCertPool()
 	caCert, err := ioutil.ReadFile(caPath)
 	if err != nil {
@@ -34,16 +35,13 @@ func newDexClient(hostAndPort, caPath, clientCrt, clientKey string) (api.DexClie
 		RootCAs:      cPool,
 		Certificates: []tls.Certificate{clientCert},
 	}
-	creds := credentials.NewTLS(clientTLSConfig)
 
-	conn, err := grpc.Dial(hostAndPort, grpc.WithTransportCredentials(creds))
-	if err != nil {
-		return nil, fmt.Errorf("dial: %v", err)
-	}
-	return api.NewDexClient(conn), nil
+	c := client.NewClient(client.Transport(transport.NewTransport(transport.TLSConfig(clientTLSConfig))))
+
+	return api.NewDexService(server.DexAPI, c), nil
 }
 
-func createPassword(cli api.DexClient) error {
+func createPassword(cli api.DexService) error {
 	p := api.Password{
 		Email: "test@example.com",
 		// bcrypt hash of the value "test1" with cost 10
@@ -102,7 +100,7 @@ func main() {
 		log.Fatal("Please provide CA & client certificates and client key. Usage: ./client --ca-crt=<path ca.crt> --client-crt=<path client.crt> --client-key=<path client key>")
 	}
 
-	client, err := newDexClient("127.0.0.1:5557", *caCrt, *clientCrt, *clientKey)
+	client, err := newDexClient(*caCrt, *clientCrt, *clientKey)
 	if err != nil {
 		log.Fatalf("failed creating dex client: %v ", err)
 	}

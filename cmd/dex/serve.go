@@ -7,20 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/ghodss/yaml"
-	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/micro/go-micro"
+	"github.com/micro/go-micro/transport"
+	mprom "github.com/micro/go-plugins/wrapper/monitoring/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 
 	"github.com/partitio/dex/api"
 	"github.com/partitio/dex/pkg/log"
@@ -103,18 +102,22 @@ func serve(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to register Go runtime metrics: %v", err)
 	}
 
-	err = prometheusRegistry.Register(prometheus.NewProcessCollector(os.Getpid(), ""))
+	err = prometheusRegistry.Register(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{
+		PidFn: func() (i int, e error) {
+			return os.Getpid(), nil
+		},
+	}))
 	if err != nil {
 		return fmt.Errorf("failed to register process metrics: %v", err)
 	}
 
-	grpcMetrics := grpcprometheus.NewServerMetrics()
-	err = prometheusRegistry.Register(grpcMetrics)
-	if err != nil {
-		return fmt.Errorf("failed to register gRPC server metrics: %v", err)
-	}
+	//grpcMetrics := grpcprometheus.NewServerMetrics()
+	//err = prometheusRegistry.Register(grpcMetrics)
+	//if err != nil {
+	//	return fmt.Errorf("failed to register gRPC server metrics: %v", err)
+	//}
 
-	var grpcOptions []grpc.ServerOption
+	var options []micro.Option
 
 	if c.GRPC.TLSCert != "" {
 		// Parse certificates from certificate file and key file for server.
@@ -143,14 +146,8 @@ func serve(cmd *cobra.Command, args []string) error {
 			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 			tlsConfig.ClientCAs = cPool
 
-			// Only add metrics if client auth is enabled
-			grpcOptions = append(grpcOptions,
-				grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor()),
-				grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor()),
-			)
 		}
-
-		grpcOptions = append(grpcOptions, grpc.Creds(credentials.NewTLS(&tlsConfig)))
+		options = append(options, micro.Transport(transport.NewTransport(transport.TLSConfig(&tlsConfig))))
 	}
 
 	s, err := c.Storage.Config.Open(logger)
@@ -293,16 +290,19 @@ func serve(cmd *cobra.Command, args []string) error {
 	}
 	if c.GRPC.Addr != "" {
 		logger.Infof("listening (grpc) on %s", c.GRPC.Addr)
+		options = append(options, micro.Address(c.GRPC.Addr))
 		go func() {
 			errc <- func() error {
-				list, err := net.Listen("tcp", c.GRPC.Addr)
-				if err != nil {
-					return fmt.Errorf("listening on %s failed: %v", c.GRPC.Addr, err)
+				options = append(options,
+					micro.Name(server.DexAPI),
+					micro.WrapHandler(mprom.NewHandlerWrapper()),
+				)
+				s := micro.NewService(options...)
+				if err := api.RegisterDexHandler(s.Server(), server.NewAPI(serverConfig.Storage, logger)); err != nil {
+					return err
 				}
-				s := grpc.NewServer(grpcOptions...)
-				api.RegisterDexServer(s, server.NewAPI(serverConfig.Storage, logger))
-				grpcMetrics.InitializeMetrics(s)
-				err = s.Serve(list)
+				//grpcMetrics.InitializeMetrics(s)
+				err = s.Run()
 				return fmt.Errorf("listening on %s failed: %v", c.GRPC.Addr, err)
 			}()
 		}()

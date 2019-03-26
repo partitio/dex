@@ -2,19 +2,20 @@ package server
 
 import (
 	"context"
-	"net"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
-
+	"github.com/micro/go-grpc"
+	"github.com/micro/go-micro"
+	rmemory "github.com/micro/go-micro/registry/memory"
 	"github.com/partitio/dex/api"
 	"github.com/partitio/dex/pkg/log"
 	"github.com/partitio/dex/server/pb"
 	"github.com/partitio/dex/storage"
 	"github.com/partitio/dex/storage/memory"
+	"github.com/sirupsen/logrus"
 )
 
 // apiClient is a test gRPC client. When constructed, it runs a server in
@@ -22,36 +23,51 @@ import (
 // instead of just this package's server implementation.
 type apiClient struct {
 	// Embedded gRPC client to talk to the server.
-	api.DexClient
-	// Close releases resources associated with this client, includuing shutting
+	api.DexService
+	// Close releases resources associated with this client, including shutting
 	// down the background server.
 	Close func()
 }
 
 // newAPI constructs a gRCP client connected to a backing server.
 func newAPI(s storage.Storage, logger log.Logger, t *testing.T) *apiClient {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
+	// Create context to stop service
+	ctx, cancel := context.WithCancel(context.Background())
+	// Create micro memory registry
+	reg := rmemory.NewRegistry()
+
+	// Wait group synchronizing service start
+	var wg sync.WaitGroup
+	// Create service
+	serv := grpc.NewService(
+		micro.Name("api"),
+		micro.Registry(reg),
+		micro.Context(ctx),
+		micro.AfterStart(func() error {
+			wg.Done()
+			return nil
+		}),
+	)
+
+	if err := api.RegisterDexHandler(serv.Server(), NewAPI(s, logger)); err != nil {
 		t.Fatal(err)
 	}
 
-	serv := grpc.NewServer()
-	api.RegisterDexServer(serv, NewAPI(s, logger))
-	go serv.Serve(l)
-
-	// Dial will retry automatically if the serv.Serve() goroutine
-	// hasn't started yet.
-	conn, err := grpc.Dial(l.Addr().String(), grpc.WithInsecure())
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	wg.Add(1)
+	// Start service
+	go func() {
+		if err := serv.Run(); err != nil {
+			wg.Done()
+			t.Fatal(err)
+		}
+	}()
+	// Wait for service
+	wg.Wait()
 	return &apiClient{
-		DexClient: api.NewDexClient(conn),
+		DexService: api.NewDexService("api", serv.Client()),
 		Close: func() {
-			conn.Close()
-			serv.Stop()
-			l.Close()
+			cancel()
+			//time.Sleep(2 * time.Second)
 		},
 	}
 }
@@ -82,7 +98,7 @@ func TestPassword(t *testing.T) {
 	}
 
 	if resp, err := client.CreatePassword(ctx, &createReq); err != nil || resp.AlreadyExists {
-		if resp.AlreadyExists {
+		if resp != nil && resp.AlreadyExists {
 			t.Fatalf("Unable to create password since %s already exists", createReq.Password.Email)
 		}
 		t.Fatalf("Unable to create password: %v", err)
