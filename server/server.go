@@ -2,29 +2,49 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/partitio/dex/connector/ldap-aggregator"
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/felixge/httpsnoop"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-
-	"github.com/coreos/dex/connector"
-	"github.com/coreos/dex/storage"
+	"github.com/partitio/dex/connector"
+	"github.com/partitio/dex/connector/authproxy"
+	"github.com/partitio/dex/connector/bitbucketcloud"
+	"github.com/partitio/dex/connector/github"
+	"github.com/partitio/dex/connector/gitlab"
+	"github.com/partitio/dex/connector/keystone"
+	"github.com/partitio/dex/connector/ldap"
+	"github.com/partitio/dex/connector/linkedin"
+	"github.com/partitio/dex/connector/microsoft"
+	"github.com/partitio/dex/connector/mock"
+	"github.com/partitio/dex/connector/oidc"
+	"github.com/partitio/dex/connector/saml"
+	"github.com/partitio/dex/pkg/log"
+	"github.com/partitio/dex/storage"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Connector is a connector with metadata.
+// LocalConnector is the local passwordDB connector which is an internal
+// connector maintained by the server.
+const LocalConnector = "local"
+
+// Connector is a connector with resource version metadata.
 type Connector struct {
-	ID          string
-	DisplayName string
-	Connector   connector.Connector
+	ResourceVersion string
+	Connector       connector.Connector
 }
 
 // Config holds the server's configuration options.
@@ -35,9 +55,6 @@ type Config struct {
 
 	// The backing persistence layer.
 	Storage storage.Storage
-
-	// Strategies for federated identity.
-	Connectors []Connector
 
 	// Valid values are "code" to enable the code flow and "token" to enable the implicit
 	// flow. If no response types are supplied this value defaults to "code".
@@ -52,19 +69,20 @@ type Config struct {
 	// Logging in implies approval.
 	SkipApprovalScreen bool
 
-	RotateKeysAfter  time.Duration // Defaults to 6 hours.
-	IDTokensValidFor time.Duration // Defaults to 24 hours
+	RotateKeysAfter      time.Duration // Defaults to 6 hours.
+	IDTokensValidFor     time.Duration // Defaults to 24 hours
+	AuthRequestsValidFor time.Duration // Defaults to 24 hours
 
 	GCFrequency time.Duration // Defaults to 5 minutes
 
 	// If specified, the server will use this function for determining time.
 	Now func() time.Time
 
-	EnablePasswordDB bool
-
 	Web WebConfig
 
-	Logger logrus.FieldLogger
+	Logger log.Logger
+
+	PrometheusRegistry *prometheus.Registry
 }
 
 // WebConfig holds the server's frontend templates and asset configuration.
@@ -80,16 +98,16 @@ type WebConfig struct {
 	//   * templates - HTML templates controlled by dex.
 	//   * themes/(theme) - Static static served at "( issuer URL )/theme".
 	//
-	Dir string
+	Dir string `json:"dir"`
 
 	// Defaults to "( issuer URL )/theme/logo.png"
-	LogoURL string
+	LogoURL string `json:"logoUrl"`
 
 	// Defaults to "dex"
-	Issuer string
+	Issuer string `json:"issuer"`
 
 	// Defaults to "coreos"
-	Theme string
+	Theme string `json:"theme"`
 }
 
 func value(val, defaultValue time.Duration) time.Duration {
@@ -103,7 +121,9 @@ func value(val, defaultValue time.Duration) time.Duration {
 type Server struct {
 	issuerURL url.URL
 
-	// Read-only map of connector IDs to connectors.
+	// mutex for the connectors map.
+	mu sync.Mutex
+	// Map of connector IDs to connectors.
 	connectors map[string]Connector
 
 	storage storage.Storage
@@ -119,9 +139,10 @@ type Server struct {
 
 	now func() time.Time
 
-	idTokensValidFor time.Duration
+	idTokensValidFor     time.Duration
+	authRequestsValidFor time.Duration
 
-	logger logrus.FieldLogger
+	logger log.Logger
 }
 
 // NewServer constructs a server from the provided config.
@@ -137,17 +158,7 @@ func newServer(ctx context.Context, c Config, rotationStrategy rotationStrategy)
 	if err != nil {
 		return nil, fmt.Errorf("server: can't parse issuer URL")
 	}
-	if c.EnablePasswordDB {
-		c.Connectors = append(c.Connectors, Connector{
-			ID:          "local",
-			DisplayName: "Email",
-			Connector:   newPasswordDB(c.Storage),
-		})
-	}
 
-	if len(c.Connectors) == 0 {
-		return nil, errors.New("server: no connectors specified")
-	}
 	if c.Storage == nil {
 		return nil, errors.New("server: storage cannot be nil")
 	}
@@ -189,19 +200,53 @@ func newServer(ctx context.Context, c Config, rotationStrategy rotationStrategy)
 		storage:                newKeyCacher(c.Storage, now),
 		supportedResponseTypes: supported,
 		idTokensValidFor:       value(c.IDTokensValidFor, 24*time.Hour),
+		authRequestsValidFor:   value(c.AuthRequestsValidFor, 24*time.Hour),
 		skipApproval:           c.SkipApprovalScreen,
 		now:                    now,
 		templates:              tmpls,
 		logger:                 c.Logger,
 	}
 
-	for _, conn := range c.Connectors {
-		s.connectors[conn.ID] = conn
+	// Retrieves connector objects in backend storage. This list includes the static connectors
+	// defined in the ConfigMap and dynamic connectors retrieved from the storage.
+	storageConnectors, err := c.Storage.ListConnectors()
+	if err != nil {
+		return nil, fmt.Errorf("server: failed to list connector objects from storage: %v", err)
+	}
+
+	if len(storageConnectors) == 0 && len(s.connectors) == 0 {
+		return nil, errors.New("server: no connectors specified")
+	}
+
+	for _, conn := range storageConnectors {
+		if _, err := s.OpenConnector(conn); err != nil {
+			return nil, fmt.Errorf("server: Failed to open connector %s: %v", conn.ID, err)
+		}
+	}
+
+	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "http_requests_total",
+		Help: "Count of all HTTP requests.",
+	}, []string{"handler", "code", "method"})
+
+	err = c.PrometheusRegistry.Register(requestCounter)
+	if err != nil {
+		return nil, fmt.Errorf("server: Failed to register Prometheus HTTP metrics: %v", err)
+	}
+
+	instrumentHandlerCounter := func(handlerName string, handler http.Handler) http.HandlerFunc {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			m := httpsnoop.CaptureMetrics(handler, w, r)
+			requestCounter.With(prometheus.Labels{"handler": handlerName, "code": strconv.Itoa(m.Code), "method": r.Method}).Inc()
+		})
 	}
 
 	r := mux.NewRouter()
+	handle := func(p string, h http.Handler) {
+		r.Handle(path.Join(issuerURL.Path, p), instrumentHandlerCounter(p, h))
+	}
 	handleFunc := func(p string, h http.HandlerFunc) {
-		r.HandleFunc(path.Join(issuerURL.Path, p), h)
+		handle(p, h)
 	}
 	handlePrefix := func(p string, h http.Handler) {
 		prefix := path.Join(issuerURL.Path, p)
@@ -228,9 +273,21 @@ func newServer(ctx context.Context, c Config, rotationStrategy rotationStrategy)
 	handleWithCORS("/keys", s.handlePublicKeys)
 	handleFunc("/auth", s.handleAuthorization)
 	handleFunc("/auth/{connector}", s.handleConnectorLogin)
-	handleFunc("/callback", s.handleConnectorCallback)
+	r.HandleFunc(path.Join(issuerURL.Path, "/callback"), func(w http.ResponseWriter, r *http.Request) {
+		// Strip the X-Remote-* headers to prevent security issues on
+		// misconfigured authproxy connector setups.
+		for key := range r.Header {
+			if strings.HasPrefix(strings.ToLower(key), "x-remote-") {
+				r.Header.Del(key)
+			}
+		}
+		s.handleConnectorCallback(w, r)
+	})
+	// For easier connector-specific web server configuration, e.g. for the
+	// "authproxy" connector.
+	handleFunc("/callback/{connector}", s.handleConnectorCallback)
 	handleFunc("/approval", s.handleApproval)
-	handleFunc("/healthz", s.handleHealth)
+	handle("/healthz", s.newHealthChecker(ctx))
 	handlePrefix("/static", static)
 	handlePrefix("/theme", theme)
 	s.mux = r
@@ -277,6 +334,11 @@ func (db passwordDB) Login(ctx context.Context, s connector.Scopes, email, passw
 		}
 		return connector.Identity{}, false, nil
 	}
+	// This check prevents dex users from logging in using static passwords
+	// configured with hash costs that are too high or low.
+	if err := checkCost(p.Hash); err != nil {
+		return connector.Identity{}, false, err
+	}
 	if err := bcrypt.CompareHashAndPassword(p.Hash, []byte(password)); err != nil {
 		return connector.Identity{}, false, nil
 	}
@@ -311,6 +373,10 @@ func (db passwordDB) Refresh(ctx context.Context, s connector.Scopes, identity c
 	identity.Username = p.Username
 
 	return identity, nil
+}
+
+func (db passwordDB) Prompt() string {
+	return "Email Address"
 }
 
 // newKeyCacher returns a storage which caches keys so long as the next
@@ -361,4 +427,106 @@ func (s *Server) startGarbageCollection(ctx context.Context, frequency time.Dura
 		}
 	}()
 	return
+}
+
+// ConnectorConfig is a configuration that can open a connector.
+type ConnectorConfig interface {
+	Open(id string, logger log.Logger) (connector.Connector, error)
+}
+
+// ConnectorsConfig variable provides an easy way to return a config struct
+// depending on the connector type.
+var ConnectorsConfig = map[string]func() ConnectorConfig{
+	"keystone":        func() ConnectorConfig { return new(keystone.Config) },
+	"mockCallback":    func() ConnectorConfig { return new(mock.CallbackConfig) },
+	"mockPassword":    func() ConnectorConfig { return new(mock.PasswordConfig) },
+	"ldap":            func() ConnectorConfig { return new(ldap.Config) },
+	"ldap-aggregator": func() ConnectorConfig { return new(ldapaggregator.Config) },
+	"github":          func() ConnectorConfig { return new(github.Config) },
+	"gitlab":          func() ConnectorConfig { return new(gitlab.Config) },
+	"oidc":            func() ConnectorConfig { return new(oidc.Config) },
+	"saml":            func() ConnectorConfig { return new(saml.Config) },
+	"authproxy":       func() ConnectorConfig { return new(authproxy.Config) },
+	"linkedin":        func() ConnectorConfig { return new(linkedin.Config) },
+	"microsoft":       func() ConnectorConfig { return new(microsoft.Config) },
+	"bitbucket-cloud": func() ConnectorConfig { return new(bitbucketcloud.Config) },
+	// Keep around for backwards compatibility.
+	"samlExperimental": func() ConnectorConfig { return new(saml.Config) },
+}
+
+// openConnector will parse the connector config and open the connector.
+func openConnector(logger log.Logger, conn storage.Connector) (connector.Connector, error) {
+	var c connector.Connector
+
+	f, ok := ConnectorsConfig[conn.Type]
+	if !ok {
+		return c, fmt.Errorf("unknown connector type %q", conn.Type)
+	}
+
+	connConfig := f()
+	if len(conn.Config) != 0 {
+		data := []byte(string(conn.Config))
+		if err := json.Unmarshal(data, connConfig); err != nil {
+			return c, fmt.Errorf("parse connector config: %v", err)
+		}
+	}
+
+	c, err := connConfig.Open(conn.ID, logger)
+	if err != nil {
+		return c, fmt.Errorf("failed to create connector %s: %v", conn.ID, err)
+	}
+
+	return c, nil
+}
+
+// OpenConnector updates server connector map with specified connector object.
+func (s *Server) OpenConnector(conn storage.Connector) (Connector, error) {
+	var c connector.Connector
+
+	if conn.Type == LocalConnector {
+		c = newPasswordDB(s.storage)
+	} else {
+		var err error
+		c, err = openConnector(s.logger, conn)
+		if err != nil {
+			return Connector{}, fmt.Errorf("failed to open connector: %v", err)
+		}
+	}
+
+	connector := Connector{
+		ResourceVersion: conn.ResourceVersion,
+		Connector:       c,
+	}
+	s.mu.Lock()
+	s.connectors[conn.ID] = connector
+	s.mu.Unlock()
+
+	return connector, nil
+}
+
+// getConnector retrieves the connector object with the given id from the storage
+// and updates the connector list for server if necessary.
+func (s *Server) getConnector(id string) (Connector, error) {
+	storageConnector, err := s.storage.GetConnector(id)
+	if err != nil {
+		return Connector{}, fmt.Errorf("failed to get connector object from storage: %v", err)
+	}
+
+	var conn Connector
+	var ok bool
+	s.mu.Lock()
+	conn, ok = s.connectors[id]
+	s.mu.Unlock()
+
+	if !ok || storageConnector.ResourceVersion != conn.ResourceVersion {
+		// Connector object does not exist in server connectors map or
+		// has been updated in the storage. Need to get latest.
+		conn, err := s.OpenConnector(storageConnector)
+		if err != nil {
+			return Connector{}, fmt.Errorf("failed to open connector: %v", err)
+		}
+		return conn, nil
+	}
+
+	return conn, nil
 }

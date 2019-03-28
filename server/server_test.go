@@ -13,7 +13,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -21,17 +20,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	oidc "github.com/coreos/go-oidc"
 	"github.com/kylelemons/godebug/pretty"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
 	jose "gopkg.in/square/go-jose.v2"
 
-	"github.com/coreos/dex/connector"
-	"github.com/coreos/dex/connector/mock"
-	"github.com/coreos/dex/storage"
-	"github.com/coreos/dex/storage/memory"
+	"github.com/partitio/dex/connector"
+	"github.com/partitio/dex/connector/mock"
+	"github.com/partitio/dex/storage"
+	"github.com/partitio/dex/storage/memory"
 )
 
 func mustLoad(s string) *rsa.PrivateKey {
@@ -89,22 +89,26 @@ func newTestServer(ctx context.Context, t *testing.T, updateConfig func(c *Confi
 	config := Config{
 		Issuer:  s.URL,
 		Storage: memory.New(logger),
-		Connectors: []Connector{
-			{
-				ID:          "mock",
-				DisplayName: "Mock",
-				Connector:   mock.NewCallbackConnector(logger),
-			},
-		},
 		Web: WebConfig{
-			Dir: filepath.Join(os.Getenv("GOPATH"), "src/github.com/coreos/dex/web"),
+			Dir: "../web",
 		},
-		Logger: logger,
+		Logger:             logger,
+		PrometheusRegistry: prometheus.NewRegistry(),
 	}
 	if updateConfig != nil {
 		updateConfig(&config)
 	}
 	s.URL = config.Issuer
+
+	connector := storage.Connector{
+		ID:              "mock",
+		Type:            "mockCallback",
+		Name:            "Mock",
+		ResourceVersion: "1",
+	}
+	if err := config.Storage.CreateConnector(connector); err != nil {
+		t.Fatalf("create connector: %v", err)
+	}
 
 	var err error
 	if server, err = newServer(ctx, config, staticRotationStrategy(testKey)); err != nil {
@@ -416,28 +420,15 @@ func TestOAuth2CodeFlow(t *testing.T) {
 			defer cancel()
 
 			// Setup a dex server.
-			logger := &logrus.Logger{
-				Out:       os.Stderr,
-				Formatter: &logrus.TextFormatter{DisableColors: true},
-				Level:     logrus.DebugLevel,
-			}
 			httpServer, s := newTestServer(ctx, t, func(c *Config) {
 				c.Issuer = c.Issuer + "/non-root-path"
 				c.Now = now
 				c.IDTokensValidFor = idTokensValidFor
-
-				// Testing connector that redirects without interaction with
-				// the user.
-				conn = mock.NewCallbackConnector(logger).(*mock.Callback)
-				c.Connectors = []Connector{
-					{
-						ID:          "mock",
-						DisplayName: "mock",
-						Connector:   conn,
-					},
-				}
 			})
 			defer httpServer.Close()
+
+			mockConn := s.connectors["mock"]
+			conn = mockConn.Connector.(*mock.Callback)
 
 			// Query server's provider metadata.
 			p, err := oidc.NewProvider(ctx, httpServer.URL)
@@ -822,13 +813,134 @@ func TestCrossClientScopes(t *testing.T) {
 	}
 }
 
+func TestCrossClientScopesWithAzpInAudienceByDefault(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	httpServer, s := newTestServer(ctx, t, func(c *Config) {
+		c.Issuer = c.Issuer + "/non-root-path"
+	})
+	defer httpServer.Close()
+
+	p, err := oidc.NewProvider(ctx, httpServer.URL)
+	if err != nil {
+		t.Fatalf("failed to get provider: %v", err)
+	}
+
+	var (
+		reqDump, respDump []byte
+		gotCode           bool
+		state             = "a_state"
+	)
+	defer func() {
+		if !gotCode {
+			t.Errorf("never got a code in callback\n%s\n%s", reqDump, respDump)
+		}
+	}()
+
+	testClientID := "testclient"
+	peerID := "peer"
+
+	var oauth2Config *oauth2.Config
+	oauth2Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/callback" {
+			q := r.URL.Query()
+			if errType := q.Get("error"); errType != "" {
+				if desc := q.Get("error_description"); desc != "" {
+					t.Errorf("got error from server %s: %s", errType, desc)
+				} else {
+					t.Errorf("got error from server %s", errType)
+				}
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			if code := q.Get("code"); code != "" {
+				gotCode = true
+				token, err := oauth2Config.Exchange(ctx, code)
+				if err != nil {
+					t.Errorf("failed to exchange code for token: %v", err)
+					return
+				}
+				rawIDToken, ok := token.Extra("id_token").(string)
+				if !ok {
+					t.Errorf("no id token found: %v", err)
+					return
+				}
+				idToken, err := p.Verifier(&oidc.Config{ClientID: testClientID}).Verify(ctx, rawIDToken)
+				if err != nil {
+					t.Errorf("failed to parse ID Token: %v", err)
+					return
+				}
+
+				sort.Strings(idToken.Audience)
+				expAudience := []string{peerID, testClientID}
+				if !reflect.DeepEqual(idToken.Audience, expAudience) {
+					t.Errorf("expected audience %q, got %q", expAudience, idToken.Audience)
+				}
+
+			}
+			if gotState := q.Get("state"); gotState != state {
+				t.Errorf("state did not match, want=%q got=%q", state, gotState)
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.Redirect(w, r, oauth2Config.AuthCodeURL(state), http.StatusSeeOther)
+	}))
+
+	defer oauth2Server.Close()
+
+	redirectURL := oauth2Server.URL + "/callback"
+	client := storage.Client{
+		ID:           testClientID,
+		Secret:       "testclientsecret",
+		RedirectURIs: []string{redirectURL},
+	}
+	if err := s.storage.CreateClient(client); err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	peer := storage.Client{
+		ID:           peerID,
+		Secret:       "foobar",
+		TrustedPeers: []string{"testclient"},
+	}
+
+	if err := s.storage.CreateClient(peer); err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	oauth2Config = &oauth2.Config{
+		ClientID:     client.ID,
+		ClientSecret: client.Secret,
+		Endpoint:     p.Endpoint(),
+		Scopes: []string{
+			oidc.ScopeOpenID, "profile", "email",
+			"audience:server:client_id:" + peer.ID,
+		},
+		RedirectURL: redirectURL,
+	}
+
+	resp, err := http.Get(oauth2Server.URL + "/login")
+	if err != nil {
+		t.Fatalf("get failed: %v", err)
+	}
+	if reqDump, err = httputil.DumpRequest(resp.Request, false); err != nil {
+		t.Fatal(err)
+	}
+	if respDump, err = httputil.DumpResponse(resp, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPasswordDB(t *testing.T) {
 	s := memory.New(logger)
 	conn := newPasswordDB(s)
 
 	pw := "hi"
 
-	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.MinCost)
+	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -904,6 +1016,16 @@ func TestPasswordDB(t *testing.T) {
 		}
 	}
 
+}
+
+func TestPasswordDBUsernamePrompt(t *testing.T) {
+	s := memory.New(logger)
+	conn := newPasswordDB(s)
+
+	expected := "Email Address"
+	if actual := conn.Prompt(); actual != expected {
+		t.Errorf("expected %v, got %v", expected, actual)
+	}
 }
 
 type storageWithKeysTrigger struct {

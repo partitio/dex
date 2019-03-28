@@ -1,5 +1,3 @@
-// +build go1.7
-
 // Package conformance provides conformance tests for storage implementations.
 package conformance
 
@@ -13,7 +11,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/coreos/dex/storage"
+	"github.com/partitio/dex/storage"
 
 	"github.com/kylelemons/godebug/pretty"
 )
@@ -341,6 +339,20 @@ func testRefreshTokenCRUD(t *testing.T, s storage.Storage) {
 			t.Errorf("get refresh: %v", err)
 			return
 		}
+
+		if diff := pretty.Compare(gr.CreatedAt.UnixNano(), gr.CreatedAt.UnixNano()); diff != "" {
+			t.Errorf("refresh token created timestamp retrieved from storage did not match: %s", diff)
+		}
+
+		if diff := pretty.Compare(gr.LastUsed.UnixNano(), gr.LastUsed.UnixNano()); diff != "" {
+			t.Errorf("refresh token last used timestamp retrieved from storage did not match: %s", diff)
+		}
+
+		gr.CreatedAt = time.Time{}
+		gr.LastUsed = time.Time{}
+		want.CreatedAt = time.Time{}
+		want.LastUsed = time.Time{}
+
 		if diff := pretty.Compare(want, gr); diff != "" {
 			t.Errorf("refresh token retrieved from storage did not match: %s", diff)
 		}
@@ -627,6 +639,22 @@ func testConnectorCRUD(t *testing.T, s storage.Storage) {
 
 	c1.Type = "oidc"
 	getAndCompare(id1, c1)
+
+	connectorList := []storage.Connector{c1, c2}
+	listAndCompare := func(want []storage.Connector) {
+		connectors, err := s.ListConnectors()
+		if err != nil {
+			t.Errorf("list connectors: %v", err)
+			return
+		}
+		sort.Slice(connectors, func(i, j int) bool {
+			return connectors[i].Name < connectors[j].Name
+		})
+		if diff := pretty.Compare(want, connectors); diff != "" {
+			t.Errorf("password list retrieved from storage did not match: %s", diff)
+		}
+	}
+	listAndCompare(connectorList)
 
 	if err := s.DeleteConnector(c1.ID); err != nil {
 		t.Fatalf("failed to delete connector: %v", err)

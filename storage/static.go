@@ -3,6 +3,8 @@ package storage
 import (
 	"errors"
 	"strings"
+
+	"github.com/partitio/dex/pkg/log"
 )
 
 // Tests for this code are in the "memory" package, since this package doesn't
@@ -25,6 +27,7 @@ func WithStaticClients(s Storage, staticClients []Client) Storage {
 	for _, client := range staticClients {
 		clientsByID[client.ID] = client
 	}
+
 	return staticClientsStorage{s, staticClients, clientsByID}
 }
 
@@ -82,19 +85,26 @@ type staticPasswordsStorage struct {
 	Storage
 
 	// A read-only set of passwords.
-	passwords        []Password
+	passwords []Password
+	// A map of passwords that is indexed by lower-case email ids
 	passwordsByEmail map[string]Password
+
+	logger log.Logger
 }
 
-// WithStaticPasswords returns a storage with a read-only set of passwords. Write actions,
-// such as creating other passwords, will fail.
-func WithStaticPasswords(s Storage, staticPasswords []Password) Storage {
+// WithStaticPasswords returns a storage with a read-only set of passwords.
+func WithStaticPasswords(s Storage, staticPasswords []Password, logger log.Logger) Storage {
 	passwordsByEmail := make(map[string]Password, len(staticPasswords))
 	for _, p := range staticPasswords {
-		p.Email = strings.ToLower(p.Email)
-		passwordsByEmail[p.Email] = p
+		//Enable case insensitive email comparison.
+		lowerEmail := strings.ToLower(p.Email)
+		if _, ok := passwordsByEmail[lowerEmail]; ok {
+			logger.Errorf("Attempting to create StaticPasswords with the same email id: %s", p.Email)
+		}
+		passwordsByEmail[lowerEmail] = p
 	}
-	return staticPasswordsStorage{s, staticPasswords, passwordsByEmail}
+
+	return staticPasswordsStorage{s, staticPasswords, passwordsByEmail, logger}
 }
 
 func (s staticPasswordsStorage) isStatic(email string) bool {
@@ -149,4 +159,74 @@ func (s staticPasswordsStorage) UpdatePassword(email string, updater func(old Pa
 		return errors.New("static passwords: read-only cannot update password")
 	}
 	return s.Storage.UpdatePassword(email, updater)
+}
+
+// staticConnectorsStorage represents a storage with read-only set of connectors.
+type staticConnectorsStorage struct {
+	Storage
+
+	// A read-only set of connectors.
+	connectors     []Connector
+	connectorsByID map[string]Connector
+}
+
+// WithStaticConnectors returns a storage with a read-only set of Servers. Write actions,
+// such as updating existing Servers, will fail.
+func WithStaticConnectors(s Storage, staticConnectors []Connector) Storage {
+	connectorsByID := make(map[string]Connector, len(staticConnectors))
+	for _, c := range staticConnectors {
+		connectorsByID[c.ID] = c
+	}
+	return staticConnectorsStorage{s, staticConnectors, connectorsByID}
+}
+
+func (s staticConnectorsStorage) isStatic(id string) bool {
+	_, ok := s.connectorsByID[id]
+	return ok
+}
+
+func (s staticConnectorsStorage) GetConnector(id string) (Connector, error) {
+	if connector, ok := s.connectorsByID[id]; ok {
+		return connector, nil
+	}
+	return s.Storage.GetConnector(id)
+}
+
+func (s staticConnectorsStorage) ListConnectors() ([]Connector, error) {
+	connectors, err := s.Storage.ListConnectors()
+	if err != nil {
+		return nil, err
+	}
+
+	n := 0
+	for _, connector := range connectors {
+		// If an entry has the same id as those provided in the static
+		// values, prefer the static value.
+		if !s.isStatic(connector.ID) {
+			connectors[n] = connector
+			n++
+		}
+	}
+	return append(connectors[:n], s.connectors...), nil
+}
+
+func (s staticConnectorsStorage) CreateConnector(c Connector) error {
+	if s.isStatic(c.ID) {
+		return errors.New("static connectors: read-only cannot create connector")
+	}
+	return s.Storage.CreateConnector(c)
+}
+
+func (s staticConnectorsStorage) DeleteConnector(id string) error {
+	if s.isStatic(id) {
+		return errors.New("static connectors: read-only cannot delete connector")
+	}
+	return s.Storage.DeleteConnector(id)
+}
+
+func (s staticConnectorsStorage) UpdateConnector(id string, updater func(old Connector) (Connector, error)) error {
+	if s.isStatic(id) {
+		return errors.New("static connectors: read-only cannot update connector")
+	}
+	return s.Storage.UpdateConnector(id, updater)
 }

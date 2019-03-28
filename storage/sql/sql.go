@@ -6,13 +6,11 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/Sirupsen/logrus"
-	"github.com/cockroachdb/cockroach-go/crdb"
-
 	// import third party drivers
-	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/partitio/dex/pkg/log"
 )
 
 // flavor represents a specific SQL implementation, and is used to translate query strings
@@ -21,13 +19,7 @@ import (
 type flavor struct {
 	queryReplacers []replacer
 
-	// Optional function to create and finish a transaction. This is mainly for
-	// cockroachdb support which requires special retry logic provided by their
-	// client package.
-	//
-	// This will be nil for most flavors.
-	//
-	// See: https://github.com/cockroachdb/docs/blob/63761c2e/_includes/app/txn-sample.go#L41-L44
+	// Optional function to create and finish a transaction.
 	executeTx func(db *sql.DB, fn func(*sql.Tx) error) error
 
 	// Does the flavor support timezones?
@@ -108,11 +100,6 @@ var (
 			{regexp.MustCompile(`0001-01-01 00:00:00 UTC`), "1000-01-01 00:00:00"},
 		},
 	}
-
-	// Not tested.
-	flavorCockroach = flavor{
-		executeTx: crdb.ExecuteTx,
-	}
 )
 
 func (f flavor) translate(query string) string {
@@ -143,7 +130,7 @@ func (c *conn) translateArgs(args []interface{}) []interface{} {
 type conn struct {
 	db                 *sql.DB
 	flavor             flavor
-	logger             logrus.FieldLogger
+	logger             log.Logger
 	alreadyExistsCheck func(err error) bool
 }
 

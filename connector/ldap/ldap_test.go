@@ -13,10 +13,10 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/kylelemons/godebug/pretty"
+	"github.com/sirupsen/logrus"
 
-	"github.com/coreos/dex/connector"
+	"github.com/partitio/dex/connector"
 )
 
 const envVar = "DEX_LDAP_TESTS"
@@ -28,6 +28,7 @@ const (
 	connectStartTLS connectionMethod = iota
 	connectLDAPS
 	connectLDAP
+	connectInsecureSkipVerify
 )
 
 // subtest is a login test against a given schema.
@@ -100,6 +101,164 @@ userpassword: bar
 			password: "bar",
 			want: connector.Identity{
 				UserID:        "cn=john,ou=People,dc=example,dc=org",
+				Username:      "john",
+				Email:         "johndoe@example.com",
+				EmailVerified: true,
+			},
+		},
+		{
+			name:      "invalidpassword",
+			username:  "jane",
+			password:  "badpassword",
+			wantBadPW: true,
+		},
+		{
+			name:      "invaliduser",
+			username:  "idontexist",
+			password:  "foo",
+			wantBadPW: true, // Want invalid password, not a query error.
+		},
+	}
+
+	runTests(t, schema, connectLDAP, c, tests)
+}
+
+func TestQueryWithEmailSuffix(t *testing.T) {
+	schema := `
+dn: dc=example,dc=org
+objectClass: dcObject
+objectClass: organization
+o: Example Company
+dc: example
+
+dn: ou=People,dc=example,dc=org
+objectClass: organizationalUnit
+ou: People
+
+dn: cn=jane,ou=People,dc=example,dc=org
+objectClass: person
+objectClass: inetOrgPerson
+sn: doe
+cn: jane
+mail: janedoe@example.com
+userpassword: foo
+
+dn: cn=john,ou=People,dc=example,dc=org
+objectClass: person
+objectClass: inetOrgPerson
+sn: doe
+cn: john
+userpassword: bar
+`
+	c := &Config{}
+	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
+	c.UserSearch.NameAttr = "cn"
+	c.UserSearch.EmailSuffix = "test.example.com"
+	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.Username = "cn"
+
+	tests := []subtest{
+		{
+			name:     "ignoremailattr",
+			username: "jane",
+			password: "foo",
+			want: connector.Identity{
+				UserID:        "cn=jane,ou=People,dc=example,dc=org",
+				Username:      "jane",
+				Email:         "jane@test.example.com",
+				EmailVerified: true,
+			},
+		},
+		{
+			name:     "nomailattr",
+			username: "john",
+			password: "bar",
+			want: connector.Identity{
+				UserID:        "cn=john,ou=People,dc=example,dc=org",
+				Username:      "john",
+				Email:         "john@test.example.com",
+				EmailVerified: true,
+			},
+		},
+	}
+
+	runTests(t, schema, connectLDAP, c, tests)
+}
+
+func TestUserFilter(t *testing.T) {
+	schema := `
+dn: dc=example,dc=org
+objectClass: dcObject
+objectClass: organization
+o: Example Company
+dc: example
+
+dn: ou=Seattle,dc=example,dc=org
+objectClass: organizationalUnit
+ou: Seattle
+
+dn: ou=Portland,dc=example,dc=org
+objectClass: organizationalUnit
+ou: Portland
+
+dn: ou=People,ou=Seattle,dc=example,dc=org
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=People,ou=Portland,dc=example,dc=org
+objectClass: organizationalUnit
+ou: People
+
+dn: cn=jane,ou=People,ou=Seattle,dc=example,dc=org
+objectClass: person
+objectClass: inetOrgPerson
+sn: doe
+cn: jane
+mail: janedoe@example.com
+userpassword: foo
+
+dn: cn=jane,ou=People,ou=Portland,dc=example,dc=org
+objectClass: person
+objectClass: inetOrgPerson
+sn: doe
+cn: jane
+mail: janedoefromportland@example.com
+userpassword: baz
+
+dn: cn=john,ou=People,ou=Seattle,dc=example,dc=org
+objectClass: person
+objectClass: inetOrgPerson
+sn: doe
+cn: john
+mail: johndoe@example.com
+userpassword: bar
+`
+	c := &Config{}
+	c.UserSearch.BaseDN = "dc=example,dc=org"
+	c.UserSearch.NameAttr = "cn"
+	c.UserSearch.EmailAttr = "mail"
+	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.Username = "cn"
+	c.UserSearch.Filter = "(ou:dn:=Seattle)"
+
+	tests := []subtest{
+		{
+			name:     "validpassword",
+			username: "jane",
+			password: "foo",
+			want: connector.Identity{
+				UserID:        "cn=jane,ou=People,ou=Seattle,dc=example,dc=org",
+				Username:      "jane",
+				Email:         "janedoe@example.com",
+				EmailVerified: true,
+			},
+		},
+		{
+			name:     "validpassword2",
+			username: "john",
+			password: "bar",
+			want: connector.Identity{
+				UserID:        "cn=john,ou=People,ou=Seattle,dc=example,dc=org",
 				Username:      "john",
 				Email:         "johndoe@example.com",
 				EmailVerified: true,
@@ -307,6 +466,112 @@ gidNumber: 1002
 	runTests(t, schema, connectLDAP, c, tests)
 }
 
+func TestGroupFilter(t *testing.T) {
+	schema := `
+dn: dc=example,dc=org
+objectClass: dcObject
+objectClass: organization
+o: Example Company
+dc: example
+
+dn: ou=People,dc=example,dc=org
+objectClass: organizationalUnit
+ou: People
+
+dn: cn=jane,ou=People,dc=example,dc=org
+objectClass: person
+objectClass: inetOrgPerson
+sn: doe
+cn: jane
+mail: janedoe@example.com
+userpassword: foo
+
+dn: cn=john,ou=People,dc=example,dc=org
+objectClass: person
+objectClass: inetOrgPerson
+sn: doe
+cn: john
+mail: johndoe@example.com
+userpassword: bar
+
+# Group definitions.
+
+dn: ou=Seattle,dc=example,dc=org
+objectClass: organizationalUnit
+ou: Seattle
+
+dn: ou=Portland,dc=example,dc=org
+objectClass: organizationalUnit
+ou: Portland
+
+dn: ou=Groups,ou=Seattle,dc=example,dc=org
+objectClass: organizationalUnit
+ou: Groups
+
+dn: ou=Groups,ou=Portland,dc=example,dc=org
+objectClass: organizationalUnit
+ou: Groups
+
+dn: cn=qa,ou=Groups,ou=Portland,dc=example,dc=org
+objectClass: groupOfNames
+cn: qa
+member: cn=john,ou=People,dc=example,dc=org
+
+dn: cn=admins,ou=Groups,ou=Seattle,dc=example,dc=org
+objectClass: groupOfNames
+cn: admins
+member: cn=john,ou=People,dc=example,dc=org
+member: cn=jane,ou=People,dc=example,dc=org
+
+dn: cn=developers,ou=Groups,ou=Seattle,dc=example,dc=org
+objectClass: groupOfNames
+cn: developers
+member: cn=jane,ou=People,dc=example,dc=org
+`
+	c := &Config{}
+	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
+	c.UserSearch.NameAttr = "cn"
+	c.UserSearch.EmailAttr = "mail"
+	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.Username = "cn"
+	c.GroupSearch.BaseDN = "dc=example,dc=org"
+	c.GroupSearch.UserAttr = "DN"
+	c.GroupSearch.GroupAttr = "member"
+	c.GroupSearch.NameAttr = "cn"
+	c.GroupSearch.Filter = "(ou:dn:=Seattle)" // ignore other groups
+
+	tests := []subtest{
+		{
+			name:     "validpassword",
+			username: "jane",
+			password: "foo",
+			groups:   true,
+			want: connector.Identity{
+				UserID:        "cn=jane,ou=People,dc=example,dc=org",
+				Username:      "jane",
+				Email:         "janedoe@example.com",
+				EmailVerified: true,
+				Groups:        []string{"admins", "developers"},
+			},
+		},
+		{
+			name:     "validpassword2",
+			username: "john",
+			password: "bar",
+			groups:   true,
+			want: connector.Identity{
+				UserID:        "cn=john,ou=People,dc=example,dc=org",
+				Username:      "john",
+				Email:         "johndoe@example.com",
+				EmailVerified: true,
+				Groups:        []string{"admins"},
+			},
+		},
+	}
+
+	runTests(t, schema, connectLDAP, c, tests)
+}
+
 func TestStartTLS(t *testing.T) {
 	schema := `
 dn: dc=example,dc=org
@@ -350,6 +615,49 @@ userpassword: foo
 	runTests(t, schema, connectStartTLS, c, tests)
 }
 
+func TestInsecureSkipVerify(t *testing.T) {
+	schema := `
+dn: dc=example,dc=org
+objectClass: dcObject
+objectClass: organization
+o: Example Company
+dc: example
+
+dn: ou=People,dc=example,dc=org
+objectClass: organizationalUnit
+ou: People
+
+dn: cn=jane,ou=People,dc=example,dc=org
+objectClass: person
+objectClass: inetOrgPerson
+sn: doe
+cn: jane
+mail: janedoe@example.com
+userpassword: foo
+`
+	c := &Config{}
+	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
+	c.UserSearch.NameAttr = "cn"
+	c.UserSearch.EmailAttr = "mail"
+	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.Username = "cn"
+
+	tests := []subtest{
+		{
+			name:     "validpassword",
+			username: "jane",
+			password: "foo",
+			want: connector.Identity{
+				UserID:        "cn=jane,ou=People,dc=example,dc=org",
+				Username:      "jane",
+				Email:         "janedoe@example.com",
+				EmailVerified: true,
+			},
+		},
+	}
+	runTests(t, schema, connectInsecureSkipVerify, c, tests)
+}
+
 func TestLDAPS(t *testing.T) {
 	schema := `
 dn: dc=example,dc=org
@@ -391,6 +699,31 @@ userpassword: foo
 		},
 	}
 	runTests(t, schema, connectLDAPS, c, tests)
+}
+
+func TestUsernamePrompt(t *testing.T) {
+	tests := map[string]struct {
+		config   Config
+		expected string
+	}{
+		"with usernamePrompt unset it returns \"\"": {
+			config:   Config{},
+			expected: "",
+		},
+		"with usernamePrompt set it returns that": {
+			config:   Config{UsernamePrompt: "Email address"},
+			expected: "Email address",
+		},
+	}
+
+	for n, d := range tests {
+		t.Run(n, func(t *testing.T) {
+			conn := &ldapConnector{Config: d.config}
+			if actual := conn.Prompt(); actual != d.expected {
+				t.Errorf("expected %v, got %v", d.expected, actual)
+			}
+		})
+	}
 }
 
 // runTests runs a set of tests against an LDAP schema. It does this by
@@ -531,6 +864,9 @@ func runTests(t *testing.T, schema string, connMethod connectionMethod, config *
 	case connectLDAPS:
 		c.Host = "localhost:10636"
 		c.RootCA = "testdata/ca.crt"
+	case connectInsecureSkipVerify:
+		c.Host = "localhost:10636"
+		c.InsecureSkipVerify = true
 	case connectLDAP:
 		c.Host = "localhost:10389"
 		c.InsecureNoSSL = true

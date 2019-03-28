@@ -5,36 +5,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"syscall"
 
-	"github.com/Sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/coreos/dex/connector"
-	"github.com/coreos/dex/connector/github"
-	"github.com/coreos/dex/connector/gitlab"
-	"github.com/coreos/dex/connector/ldap"
-	"github.com/coreos/dex/connector/mock"
-	"github.com/coreos/dex/connector/oidc"
-	"github.com/coreos/dex/connector/saml"
-	"github.com/coreos/dex/server"
-	"github.com/coreos/dex/storage"
-	"github.com/coreos/dex/storage/kubernetes"
-	"github.com/coreos/dex/storage/memory"
-	"github.com/coreos/dex/storage/sql"
+	"github.com/partitio/dex/pkg/log"
+	"github.com/partitio/dex/server"
+	"github.com/partitio/dex/storage"
+	"github.com/partitio/dex/storage/etcd"
+	"github.com/partitio/dex/storage/kubernetes"
+	"github.com/partitio/dex/storage/memory"
+	"github.com/partitio/dex/storage/sql"
 )
 
 // Config is the config format for the main application.
 type Config struct {
-	Issuer     string      `json:"issuer"`
-	Storage    Storage     `json:"storage"`
-	Connectors []Connector `json:"connectors"`
-	Web        Web         `json:"web"`
-	OAuth2     OAuth2      `json:"oauth2"`
-	GRPC       GRPC        `json:"grpc"`
-	Expiry     Expiry      `json:"expiry"`
-	Logger     Logger      `json:"logger"`
+	Issuer    string    `json:"issuer"`
+	Storage   Storage   `json:"storage"`
+	Web       Web       `json:"web"`
+	Telemetry Telemetry `json:"telemetry"`
+	OAuth2    OAuth2    `json:"oauth2"`
+	GRPC      GRPC      `json:"grpc"`
+	Expiry    Expiry    `json:"expiry"`
+	Logger    Logger    `json:"logger"`
 
 	Frontend server.WebConfig `json:"frontend"`
+
+	// StaticConnectors are user defined connectors specified in the ConfigMap
+	// Write operations, like updating a connector, will fail.
+	StaticConnectors []Connector `json:"connectors"`
 
 	// StaticClients cause the server to use this list of clients rather than
 	// querying the storage. Write operations, like creating a client, will fail.
@@ -107,6 +106,11 @@ type Web struct {
 	AllowedOrigins []string `json:"allowedOrigins"`
 }
 
+// Telemetry is the config format for telemetry including the HTTP server config.
+type Telemetry struct {
+	HTTP string `json:"http"`
+}
+
 // GRPC is the config for the gRPC API.
 type GRPC struct {
 	// The port to listen on.
@@ -124,10 +128,11 @@ type Storage struct {
 
 // StorageConfig is a configuration that can create a storage.
 type StorageConfig interface {
-	Open(logrus.FieldLogger) (storage.Storage, error)
+	Open(logger log.Logger) (storage.Storage, error)
 }
 
 var storages = map[string]func() StorageConfig{
+	"etcd":       func() StorageConfig { return new(etcd.Etcd) },
 	"kubernetes": func() StorageConfig { return new(kubernetes.Config) },
 	"memory":     func() StorageConfig { return new(memory.Config) },
 	"sqlite3":    func() StorageConfig { return new(sql.SQLite3) },
@@ -152,7 +157,7 @@ func (s *Storage) UnmarshalJSON(b []byte) error {
 
 	storageConfig := f()
 	if len(store.Config) != 0 {
-		data := []byte(os.ExpandEnv(string(store.Config)))
+		data := []byte(ExpandEnv(string(store.Config)))
 		if err := json.Unmarshal(data, storageConfig); err != nil {
 			return fmt.Errorf("parse storage config: %v", err)
 		}
@@ -171,24 +176,7 @@ type Connector struct {
 	Name string `json:"name"`
 	ID   string `json:"id"`
 
-	Config ConnectorConfig `json:"config"`
-}
-
-// ConnectorConfig is a configuration that can open a connector.
-type ConnectorConfig interface {
-	Open(logrus.FieldLogger) (connector.Connector, error)
-}
-
-var connectors = map[string]func() ConnectorConfig{
-	"mockCallback": func() ConnectorConfig { return new(mock.CallbackConfig) },
-	"mockPassword": func() ConnectorConfig { return new(mock.PasswordConfig) },
-	"ldap":         func() ConnectorConfig { return new(ldap.Config) },
-	"github":       func() ConnectorConfig { return new(github.Config) },
-	"gitlab":       func() ConnectorConfig { return new(gitlab.Config) },
-	"oidc":         func() ConnectorConfig { return new(oidc.Config) },
-	"saml":         func() ConnectorConfig { return new(saml.Config) },
-	// Keep around for backwards compatibility.
-	"samlExperimental": func() ConnectorConfig { return new(saml.Config) },
+	Config server.ConnectorConfig `json:"config"`
 }
 
 // UnmarshalJSON allows Connector to implement the unmarshaler interface to
@@ -204,14 +192,14 @@ func (c *Connector) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &conn); err != nil {
 		return fmt.Errorf("parse connector: %v", err)
 	}
-	f, ok := connectors[conn.Type]
+	f, ok := server.ConnectorsConfig[conn.Type]
 	if !ok {
 		return fmt.Errorf("unknown connector type %q", conn.Type)
 	}
 
 	connConfig := f()
 	if len(conn.Config) != 0 {
-		data := []byte(os.ExpandEnv(string(conn.Config)))
+		data := []byte(ExpandEnv(string(conn.Config)))
 		if err := json.Unmarshal(data, connConfig); err != nil {
 			return fmt.Errorf("parse connector config: %v", err)
 		}
@@ -225,6 +213,21 @@ func (c *Connector) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// ToStorageConnector converts an object to storage connector type.
+func ToStorageConnector(c Connector) (storage.Connector, error) {
+	data, err := json.Marshal(c.Config)
+	if err != nil {
+		return storage.Connector{}, fmt.Errorf("failed to marshal connector config: %v", err)
+	}
+
+	return storage.Connector{
+		ID:     c.ID,
+		Type:   c.Type,
+		Name:   c.Name,
+		Config: data,
+	}, nil
+}
+
 // Expiry holds configuration for the validity period of components.
 type Expiry struct {
 	// SigningKeys defines the duration of time after which the SigningKeys will be rotated.
@@ -232,6 +235,9 @@ type Expiry struct {
 
 	// IdTokens defines the duration of time for which the IdTokens will be valid.
 	IDTokens string `json:"idTokens"`
+
+	// AuthRequests defines the duration of time for which the AuthRequests will be valid.
+	AuthRequests string `json:"authRequests"`
 }
 
 // Logger holds configuration required to customize logging for dex.
@@ -241,4 +247,14 @@ type Logger struct {
 
 	// Format specifies the format to be used for logging.
 	Format string `json:"format"`
+}
+
+func ExpandEnv(s string) string {
+	return os.Expand(s, func(key string) string {
+		if key == "$" {
+			return "$"
+		}
+		v, _ := syscall.Getenv(key)
+		return v
+	})
 }

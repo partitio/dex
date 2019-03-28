@@ -13,11 +13,11 @@ import (
 )
 
 const (
-	tmplApproval = "approval.html"
-	tmplLogin    = "login.html"
-	tmplPassword = "password.html"
-	tmplOOB      = "oob.html"
-	tmplError    = "error.html"
+	tmplApproval = "approval.gohtml"
+	tmplLogin    = "login.gohtml"
+	tmplPassword = "password.gohtml"
+	tmplOOB      = "oob.gohtml"
+	tmplError    = "error.gohtml"
 )
 
 var requiredTmpls = []string{
@@ -124,7 +124,7 @@ func loadTemplates(c webConfig, templatesDir string) (*templates, error) {
 		return nil, fmt.Errorf("read dir: %v", err)
 	}
 
-	filenames := []string{}
+	var filenames []string
 	for _, file := range files {
 		if file.IsDir() {
 			continue
@@ -139,13 +139,14 @@ func loadTemplates(c webConfig, templatesDir string) (*templates, error) {
 		"issuer": func() string { return c.issuer },
 		"logo":   func() string { return c.logoURL },
 		"url":    func(s string) string { return join(c.issuerURL, s) },
+		"lower":  strings.ToLower,
 	}
 
 	tmpls, err := template.New("").Funcs(funcs).ParseFiles(filenames...)
 	if err != nil {
 		return nil, fmt.Errorf("parse files: %v", err)
 	}
-	missingTmpls := []string{}
+	var missingTmpls []string
 	for _, tmplName := range requiredTmpls {
 		if tmpls.Lookup(tmplName) == nil {
 			missingTmpls = append(missingTmpls, tmplName)
@@ -166,7 +167,7 @@ func loadTemplates(c webConfig, templatesDir string) (*templates, error) {
 var scopeDescriptions = map[string]string{
 	"offline_access": "Have offline access",
 	"profile":        "View basic profile information",
-	"email":          "View your email",
+	"email":          "View your email address",
 }
 
 type connectorInfo struct {
@@ -181,21 +182,34 @@ func (n byName) Len() int           { return len(n) }
 func (n byName) Less(i, j int) bool { return n[i].Name < n[j].Name }
 func (n byName) Swap(i, j int)      { n[i], n[j] = n[j], n[i] }
 
+type LoginTmplData struct {
+	Connectors []connectorInfo
+}
+
 func (t *templates) login(w http.ResponseWriter, connectors []connectorInfo) error {
 	sort.Sort(byName(connectors))
-	data := struct {
-		Connectors []connectorInfo
-	}{connectors}
+	data := LoginTmplData{connectors}
 	return renderTemplate(w, t.loginTmpl, data)
 }
 
-func (t *templates) password(w http.ResponseWriter, postURL, lastUsername string, lastWasInvalid bool) error {
-	data := struct {
-		PostURL  string
-		Username string
-		Invalid  bool
-	}{postURL, lastUsername, lastWasInvalid}
+type PasswordTmplData struct {
+	PostURL        string
+	BackLink       bool
+	Username       string
+	UsernamePrompt string
+	Invalid        bool
+}
+
+func (t *templates) password(w http.ResponseWriter, postURL, lastUsername, usernamePrompt string, lastWasInvalid, showBacklink bool) error {
+	data := PasswordTmplData{postURL, showBacklink, lastUsername, usernamePrompt, lastWasInvalid}
 	return renderTemplate(w, t.passwordTmpl, data)
+}
+
+type ApprovalTmplData struct {
+	User      string
+	Client    string
+	AuthReqID string
+	Scopes    []string
 }
 
 func (t *templates) approval(w http.ResponseWriter, authReqID, username, clientName string, scopes []string) error {
@@ -207,28 +221,31 @@ func (t *templates) approval(w http.ResponseWriter, authReqID, username, clientN
 		}
 	}
 	sort.Strings(accesses)
-	data := struct {
-		User      string
-		Client    string
-		AuthReqID string
-		Scopes    []string
-	}{username, clientName, authReqID, accesses}
+	data := ApprovalTmplData{username, clientName, authReqID, accesses}
 	return renderTemplate(w, t.approvalTmpl, data)
 }
 
+type OOBTmplData struct {
+	Code string
+}
+
 func (t *templates) oob(w http.ResponseWriter, code string) error {
-	data := struct {
-		Code string
-	}{code}
+	data := OOBTmplData{code}
 	return renderTemplate(w, t.oobTmpl, data)
 }
 
-func (t *templates) err(w http.ResponseWriter, errType string, errMsg string) error {
-	data := struct {
-		ErrType string
-		ErrMsg  string
-	}{errType, errMsg}
-	return renderTemplate(w, t.errorTmpl, data)
+type ErrTmplData struct {
+	ErrType string
+	ErrMsg  string
+}
+
+func (t *templates) err(w http.ResponseWriter, errCode int, errMsg string) error {
+	w.WriteHeader(errCode)
+	data := ErrTmplData{http.StatusText(errCode), errMsg}
+	if err := t.errorTmpl.Execute(w, data); err != nil {
+		return fmt.Errorf("Error rendering template %s: %s", t.errorTmpl.Name(), err)
+	}
+	return nil
 }
 
 // small io.Writer utility to determine if executing the template wrote to the underlying response writer.

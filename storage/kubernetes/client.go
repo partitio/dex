@@ -22,20 +22,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/ghodss/yaml"
 	"github.com/gtank/cryptopasta"
 	"golang.org/x/net/http2"
 
-	"github.com/coreos/dex/storage"
-	"github.com/coreos/dex/storage/kubernetes/k8sapi"
+	"github.com/partitio/dex/pkg/log"
+	"github.com/partitio/dex/storage"
+	"github.com/partitio/dex/storage/kubernetes/k8sapi"
 )
 
 type client struct {
 	client    *http.Client
 	baseURL   string
 	namespace string
-	logger    logrus.FieldLogger
+	logger    log.Logger
 
 	// Hash function to map IDs (which could span a large range) to Kubernetes names.
 	// While this is not currently upgradable, it could be in the future.
@@ -137,7 +137,7 @@ func checkHTTPErr(r *http.Response, validStatusCodes ...int) error {
 	if r.StatusCode == http.StatusNotFound {
 		return storage.ErrNotFound
 	}
-	if r.Request.Method == "POST" && r.StatusCode == http.StatusConflict {
+	if r.Request.Method == http.MethodPost && r.StatusCode == http.StatusConflict {
 		return storage.ErrAlreadyExists
 	}
 
@@ -157,7 +157,11 @@ func closeResp(r *http.Response) {
 }
 
 func (c *client) get(resource, name string, v interface{}) error {
-	url := c.urlFor(c.apiVersion, c.namespace, resource, name)
+	return c.getResource(c.apiVersion, c.namespace, resource, name, v)
+}
+
+func (c *client) getResource(apiVersion, namespace, resource, name string, v interface{}) error {
+	url := c.urlFor(apiVersion, namespace, resource, name)
 	resp, err := c.client.Get(url)
 	if err != nil {
 		return err
@@ -249,7 +253,7 @@ func (c *client) put(resource, name string, v interface{}) error {
 	return checkHTTPErr(resp, http.StatusOK)
 }
 
-func newClient(cluster k8sapi.Cluster, user k8sapi.AuthInfo, namespace string, logger logrus.FieldLogger) (*client, error) {
+func newClient(cluster k8sapi.Cluster, user k8sapi.AuthInfo, namespace string, logger log.Logger, useTPR bool) (*client, error) {
 	tlsConfig := cryptopasta.DefaultTLSConfig()
 	data := func(b string, file string) ([]byte, error) {
 		if b != "" {
@@ -325,13 +329,22 @@ func newClient(cluster k8sapi.Cluster, user k8sapi.AuthInfo, namespace string, l
 		}
 	}
 
-	// TODO(ericchiang): make API Group and version configurable.
+	// the API Group and version differ depending on if CRDs or TPRs are used.
+	apiVersion := "dex.coreos.com/v1"
+	if useTPR {
+		apiVersion = "oidc.coreos.com/v1"
+	}
+
+	logger.Infof("kubernetes client apiVersion = %s", apiVersion)
 	return &client{
-		client:     &http.Client{Transport: t},
+		client: &http.Client{
+			Transport: t,
+			Timeout:   15 * time.Second,
+		},
 		baseURL:    cluster.Server,
 		hash:       func() hash.Hash { return fnv.New64() },
 		namespace:  namespace,
-		apiVersion: "oidc.coreos.com/v1",
+		apiVersion: apiVersion,
 		logger:     logger,
 	}, nil
 }

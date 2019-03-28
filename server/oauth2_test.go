@@ -10,7 +10,7 @@ import (
 
 	jose "gopkg.in/square/go-jose.v2"
 
-	"github.com/coreos/dex/storage"
+	"github.com/partitio/dex/storage"
 )
 
 func TestParseAuthorizationRequest(t *testing.T) {
@@ -193,5 +193,69 @@ func TestAccessTokenHash(t *testing.T) {
 	}
 	if atHash != googleAccessTokenHash {
 		t.Errorf("expected %q got %q", googleAccessTokenHash, atHash)
+	}
+}
+
+func TestValidRedirectURI(t *testing.T) {
+	tests := []struct {
+		client      storage.Client
+		redirectURI string
+		wantValid   bool
+	}{
+		{
+			client: storage.Client{
+				RedirectURIs: []string{"http://foo.com/bar"},
+			},
+			redirectURI: "http://foo.com/bar",
+			wantValid:   true,
+		},
+		{
+			client: storage.Client{
+				RedirectURIs: []string{"http://foo.com/bar"},
+			},
+			redirectURI: "http://foo.com/bar/baz",
+		},
+		{
+			client: storage.Client{
+				Public: true,
+			},
+			redirectURI: "urn:ietf:wg:oauth:2.0:oob",
+			wantValid:   true,
+		},
+		{
+			client: storage.Client{
+				Public: true,
+			},
+			redirectURI: "http://localhost:8080/",
+			wantValid:   true,
+		},
+		{
+			client: storage.Client{
+				Public: true,
+			},
+			redirectURI: "http://localhost:991/bar",
+			wantValid:   true,
+		},
+		{
+			client: storage.Client{
+				Public: true,
+			},
+			redirectURI: "http://localhost",
+			wantValid:   true,
+		},
+		{
+			client: storage.Client{
+				Public: true,
+			},
+			redirectURI: "http://localhost.localhost:8080/",
+			wantValid:   false,
+		},
+	}
+	for _, test := range tests {
+		got := validateRedirectURI(test.client, test.redirectURI)
+		if got != test.wantValid {
+			t.Errorf("client=%#v, redirectURI=%q, wanted valid=%t, got=%t",
+				test.client, test.redirectURI, test.wantValid, got)
+		}
 	}
 }

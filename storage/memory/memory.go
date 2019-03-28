@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Sirupsen/logrus"
-	"github.com/coreos/dex/storage"
+	"github.com/partitio/dex/pkg/log"
+	"github.com/partitio/dex/storage"
 )
 
 // New returns an in memory storage.
-func New(logger logrus.FieldLogger) storage.Storage {
+func New(logger log.Logger) storage.Storage {
 	return &memStorage{
 		clients:         make(map[string]storage.Client),
 		authCodes:       make(map[string]storage.AuthCode),
@@ -32,7 +32,7 @@ type Config struct {
 }
 
 // Open always returns a new in memory storage.
-func (c *Config) Open(logger logrus.FieldLogger) (storage.Storage, error) {
+func (c *Config) Open(logger log.Logger) (storage.Storage, error) {
 	return New(logger), nil
 }
 
@@ -49,7 +49,7 @@ type memStorage struct {
 
 	keys storage.Keys
 
-	logger logrus.FieldLogger
+	logger log.Logger
 }
 
 type offlineSessionID struct {
@@ -128,12 +128,12 @@ func (s *memStorage) CreateAuthRequest(a storage.AuthRequest) (err error) {
 }
 
 func (s *memStorage) CreatePassword(p storage.Password) (err error) {
-	p.Email = strings.ToLower(p.Email)
+	lowerEmail := strings.ToLower(p.Email)
 	s.tx(func() {
-		if _, ok := s.passwords[p.Email]; ok {
+		if _, ok := s.passwords[lowerEmail]; ok {
 			err = storage.ErrAlreadyExists
 		} else {
-			s.passwords[p.Email] = p
+			s.passwords[lowerEmail] = p
 		}
 	})
 	return

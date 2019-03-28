@@ -5,9 +5,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Sirupsen/logrus"
-	"github.com/coreos/dex/storage"
-	"github.com/coreos/dex/storage/conformance"
+	"github.com/sirupsen/logrus"
+
+	"github.com/partitio/dex/storage"
+	"github.com/partitio/dex/storage/conformance"
 )
 
 const testKubeConfigEnv = "DEX_KUBECONFIG"

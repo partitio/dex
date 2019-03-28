@@ -19,7 +19,7 @@ Apps that directly use dex to authenticate a user use OAuth2 code flows to reque
 * User visits client app.
 * Client app redirects user to dex with an OAuth2 request.
 * Dex determines user's identity.
-* Dex redirects user to dex with a code.
+* Dex redirects user to client with a code.
 * Client exchanges code with dex for an id_token.
 
 ![][dex-flow]
@@ -47,7 +47,7 @@ staticClients:
   - 'http://127.0.0.1:5555/callback'
 ```
 
-In this case, the Go code would configured as:
+In this case, the Go code would be configured as:
 
 ```go
 // Initialize a provider by specifying dex's issuer URL.
@@ -63,7 +63,7 @@ oauth2Config := oauth2.Config{
     ClientSecret: "example-app-secret",
 
     // The redirectURL.
-    RedirectURL: "http://127.0.0.1:5556/callback",
+    RedirectURL: "http://127.0.0.1:5555/callback",
 
     // Discovery returns the OAuth2 endpoints.
     Endpoint: provider.Endpoint(),
@@ -75,7 +75,7 @@ oauth2Config := oauth2.Config{
 }
 
 // Create an ID token parser.
-idTokenVerifier := provider.NewVerifier(&oidc.Config{ClientID: "example-app"})
+idTokenVerifier := provider.Verifier(&oidc.Config{ClientID: "example-app"})
 ```
 
 The HTTP server should then redirect unauthenticated users to dex to initialize the OAuth2 flow.
@@ -136,7 +136,9 @@ A more thorough discussion of these kinds of best practices can be found in the 
 
 ## Consuming ID tokens
 
-Apps can also choose to consume ID tokens, letting other trusted clients handle the web flows for login. Clients pass along the ID tokens they receive from dex, usually as a bearer token, letting them act at the user to the backend service.
+Apps can also choose to consume ID tokens, letting other trusted clients handle the web flows for login. Clients pass along the ID tokens they receive from dex, usually as a bearer token, letting them act as the user to the backend service.
+
+![][dex-backend-flow]
 
 To accept ID tokens as user credentials, an app would construct an OpenID Connect verifier similarly to the above example. The verifier validates the ID token's signature, ensures it hasn't expired, etc. An important part of this code is that the verifier only trusts the example app's client. This ensures the example app is the one who's using the ID token, and not another, untrusted client.
 
@@ -147,7 +149,7 @@ if err != nil {
     // handle error
 }
 // Create an ID token parser, but only trust ID tokens issued to "example-app"
-idTokenVerifier := provider.NewVerifier(&oidc.Config{ClientID: "example-app"})
+idTokenVerifier := provider.Verifier(&oidc.Config{ClientID: "example-app"})
 ```
 
 The verifier can then be used to pull user info out of tokens:
@@ -182,6 +184,7 @@ func authorize(ctx context.Context, bearerToken string) (*user, error) {
 
 [api-server]: https://kubernetes.io/docs/admin/authentication/#openid-connect-tokens
 [dex-flow]: img/dex-flow.png
+[dex-backend-flow]: img/dex-backend-flow.png
 [example-app]: ../cmd/example-app
 [oauth2-threat-model]: https://tools.ietf.org/html/rfc6819
 [go-oidc]: https://godoc.org/github.com/coreos/go-oidc

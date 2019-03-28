@@ -1,6 +1,8 @@
 package oidc
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestKnownBrokenAuthHeaderProvider(t *testing.T) {
 	tests := []struct {

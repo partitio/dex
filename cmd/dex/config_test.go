@@ -1,14 +1,16 @@
 package main
 
 import (
+	"os"
 	"testing"
 
-	"github.com/coreos/dex/connector/mock"
-	"github.com/coreos/dex/connector/oidc"
-	"github.com/coreos/dex/storage"
-	"github.com/coreos/dex/storage/sql"
 	"github.com/ghodss/yaml"
 	"github.com/kylelemons/godebug/pretty"
+
+	"github.com/partitio/dex/connector/mock"
+	"github.com/partitio/dex/connector/oidc"
+	"github.com/partitio/dex/storage"
+	"github.com/partitio/dex/storage/sql"
 )
 
 var _ = yaml.YAMLToJSON
@@ -17,10 +19,14 @@ func TestUnmarshalConfig(t *testing.T) {
 	rawConfig := []byte(`
 issuer: http://127.0.0.1:5556/dex
 storage:
-  type: sqlite3
+  type: postgres
   config:
-    file: examples/dex.db
-
+    host: 10.0.0.1
+    port: 65432
+    maxOpenConns: 5
+    maxIdleConns: 3
+    connMaxLifetime: 30
+    connectionTimeout: 3
 web:
   http: 127.0.0.1:5556
 staticClients:
@@ -40,7 +46,7 @@ connectors:
   config:
     issuer: https://accounts.google.com
     clientID: foo
-    clientSecret: bar
+    clientSecret: ba$$r
     redirectURI: http://127.0.0.1:5556/dex/callback/google
 
 enablePasswordDB: true
@@ -57,8 +63,9 @@ staticPasswords:
   userID: "41331323-6f44-45e6-b3b9-2c4b60c02be5"
 
 expiry:
-  signingKeys: "6h"
-  idTokens: "24h"
+  signingKeys: "7h"
+  idTokens: "25h"
+  authRequests: "25h"
 
 logger:
   level: "debug"
@@ -68,9 +75,14 @@ logger:
 	want := Config{
 		Issuer: "http://127.0.0.1:5556/dex",
 		Storage: Storage{
-			Type: "sqlite3",
-			Config: &sql.SQLite3{
-				File: "examples/dex.db",
+			Type: "postgres",
+			Config: &sql.Postgres{
+				Host:              "10.0.0.1",
+				Port:              65432,
+				MaxOpenConns:      5,
+				MaxIdleConns:      3,
+				ConnMaxLifetime:   30,
+				ConnectionTimeout: 3,
 			},
 		},
 		Web: Web{
@@ -86,7 +98,7 @@ logger:
 				},
 			},
 		},
-		Connectors: []Connector{
+		StaticConnectors: []Connector{
 			{
 				Type:   "mockCallback",
 				ID:     "mock",
@@ -100,7 +112,7 @@ logger:
 				Config: &oidc.Config{
 					Issuer:       "https://accounts.google.com",
 					ClientID:     "foo",
-					ClientSecret: "bar",
+					ClientSecret: "ba$r",
 					RedirectURI:  "http://127.0.0.1:5556/dex/callback/google",
 				},
 			},
@@ -121,8 +133,9 @@ logger:
 			},
 		},
 		Expiry: Expiry{
-			SigningKeys: "6h",
-			IDTokens:    "24h",
+			SigningKeys:  "7h",
+			IDTokens:     "25h",
+			AuthRequests: "25h",
 		},
 		Logger: Logger{
 			Level:  "debug",
@@ -138,4 +151,22 @@ logger:
 		t.Errorf("got!=want: %s", diff)
 	}
 
+}
+
+func TestExpandEnv(t *testing.T) {
+	s := ExpandEnv("$$")
+	if s != "$" {
+		t.Errorf("got %s, should be $", s)
+	}
+	if err := os.Setenv("test", "TEST"); err != nil {
+		t.Fatal("failed to add test environment variable")
+	}
+	s = ExpandEnv("$test$$")
+	if s != "TEST$" {
+		t.Errorf("got %s, should be TEST$", s)
+	}
+	s = ExpandEnv("$$$test")
+	if s != "$TEST" {
+		t.Errorf("got %s, should be $TEST", s)
+	}
 }

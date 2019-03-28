@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Sirupsen/logrus"
-	"github.com/coreos/dex/storage"
-	"github.com/coreos/dex/storage/kubernetes/k8sapi"
+	"github.com/partitio/dex/pkg/log"
+	"github.com/partitio/dex/storage"
+	"github.com/partitio/dex/storage/kubernetes/k8sapi"
 )
 
 const (
@@ -38,10 +38,11 @@ const (
 type Config struct {
 	InCluster      bool   `json:"inCluster"`
 	KubeConfigFile string `json:"kubeConfigFile"`
+	UseTPR         bool   `json:"useTPR"` // Flag option to use TPRs instead of CRDs
 }
 
 // Open returns a storage using Kubernetes third party resource.
-func (c *Config) Open(logger logrus.FieldLogger) (storage.Storage, error) {
+func (c *Config) Open(logger log.Logger) (storage.Storage, error) {
 	cli, err := c.open(logger, false)
 	if err != nil {
 		return nil, err
@@ -52,9 +53,9 @@ func (c *Config) Open(logger logrus.FieldLogger) (storage.Storage, error) {
 // open returns a kubernetes client, initializing the third party resources used
 // by dex.
 //
-// errOnTPRs controls if errors creating the resources cause this method to return
+// waitForResources controls if errors creating the resources cause this method to return
 // immediately (used during testing), or if the client will asynchronously retry.
-func (c *Config) open(logger logrus.FieldLogger, errOnTPRs bool) (*client, error) {
+func (c *Config) open(logger log.Logger, waitForResources bool) (*client, error) {
 	if c.InCluster && (c.KubeConfigFile != "") {
 		return nil, errors.New("cannot specify both 'inCluster' and 'kubeConfigFile'")
 	}
@@ -77,26 +78,27 @@ func (c *Config) open(logger logrus.FieldLogger, errOnTPRs bool) (*client, error
 		return nil, err
 	}
 
-	cli, err := newClient(cluster, user, namespace, logger)
+	cli, err := newClient(cluster, user, namespace, logger, c.UseTPR)
 	if err != nil {
 		return nil, fmt.Errorf("create client: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	if !cli.createThirdPartyResources() {
-		if errOnTPRs {
+	logger.Info("creating custom Kubernetes resources")
+	if !cli.registerCustomResources(c.UseTPR) {
+		if waitForResources {
 			cancel()
-			return nil, fmt.Errorf("failed creating third party resources")
+			return nil, fmt.Errorf("failed creating custom resources")
 		}
 
-		// Try to synchronously create the third party resources once. This doesn't mean
+		// Try to synchronously create the custom resources once. This doesn't mean
 		// they'll immediately be available, but ensures that the client will actually try
 		// once.
-		logger.Errorf("failed creating third party resources: %v", err)
+		logger.Errorf("failed creating custom resources: %v", err)
 		go func() {
 			for {
-				if cli.createThirdPartyResources() {
+				if cli.registerCustomResources(c.UseTPR) {
 					return
 				}
 
@@ -109,39 +111,113 @@ func (c *Config) open(logger logrus.FieldLogger, errOnTPRs bool) (*client, error
 		}()
 	}
 
-	// If the client is closed, stop trying to create third party resources.
+	if waitForResources {
+		if err := cli.waitForCRDs(ctx); err != nil {
+			cancel()
+			return nil, err
+		}
+	}
+
+	// If the client is closed, stop trying to create resources.
 	cli.cancel = cancel
 	return cli, nil
 }
 
-// createThirdPartyResources attempts to create the third party resources dex
-// requires or identifies that they're already enabled. It logs all errors,
-// returning true if the third party resources were created successfully.
+// registerCustomResources attempts to create the custom resources dex
+// requires or identifies that they're already enabled. This function creates
+// third party resources(TPRs) or custom resource definitions(CRDs) depending
+// on the `useTPR` flag passed in as an argument.
+// It logs all errors, returning true if the resources were created successfully.
 //
-// Creating a third party resource does not mean that they'll be immediately available.
-//
-// TODO(ericchiang): Provide an option to wait for the third party resources
-// to actually be available.
-func (cli *client) createThirdPartyResources() (ok bool) {
+// Creating a custom resource does not mean that they'll be immediately available.
+func (cli *client) registerCustomResources(useTPR bool) (ok bool) {
 	ok = true
-	for _, r := range thirdPartyResources {
-		err := cli.postResource("extensions/v1beta1", "", "thirdpartyresources", r)
+	length := len(customResourceDefinitions)
+	if useTPR {
+		length = len(thirdPartyResources)
+	}
+
+	for i := 0; i < length; i++ {
+		var err error
+		var resourceName string
+
+		if useTPR {
+			r := thirdPartyResources[i]
+			err = cli.postResource("extensions/v1beta1", "", "thirdpartyresources", r)
+			resourceName = r.ObjectMeta.Name
+		} else {
+			r := customResourceDefinitions[i]
+			var i interface{}
+			cli.logger.Infof("checking if custom resource %s has been created already...", r.ObjectMeta.Name)
+			if err := cli.list(r.Spec.Names.Plural, &i); err == nil {
+				cli.logger.Infof("The custom resource %s already available, skipping create", r.ObjectMeta.Name)
+				continue
+			} else {
+				cli.logger.Infof("failed to list custom resource %s, attempting to create: %v", r.ObjectMeta.Name, err)
+			}
+			err = cli.postResource("apiextensions.k8s.io/v1beta1", "", "customresourcedefinitions", r)
+			resourceName = r.ObjectMeta.Name
+		}
+
 		if err != nil {
 			switch err {
 			case storage.ErrAlreadyExists:
-				cli.logger.Infof("third party resource already created %s", r.ObjectMeta.Name)
+				cli.logger.Infof("custom resource already created %s", resourceName)
 			case storage.ErrNotFound:
-				cli.logger.Errorf("third party resources not found, please enable API group extensions/v1beta1")
+				cli.logger.Errorf("custom resources not found, please enable the respective API group")
 				ok = false
 			default:
-				cli.logger.Errorf("creating third party resource %s: %v", r.ObjectMeta.Name, err)
+				cli.logger.Errorf("creating custom resource %s: %v", resourceName, err)
 				ok = false
 			}
 			continue
 		}
-		cli.logger.Errorf("create third party resource %s", r.ObjectMeta.Name)
+		cli.logger.Errorf("create custom resource %s", resourceName)
 	}
 	return ok
+}
+
+// waitForCRDs waits for all CRDs to be in a ready state, and is used
+// by the tests to synchronize before running conformance.
+func (cli *client) waitForCRDs(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	defer cancel()
+
+	for _, crd := range customResourceDefinitions {
+		for {
+			err := cli.isCRDReady(crd.Name)
+			if err == nil {
+				break
+			}
+
+			cli.logger.Errorf("checking CRD: %v", err)
+
+			select {
+			case <-ctx.Done():
+				return errors.New("timed out waiting for CRDs to be available")
+			case <-time.After(time.Millisecond * 100):
+			}
+		}
+	}
+	return nil
+}
+
+// isCRDReady determines if a CRD is ready by inspecting its conditions.
+func (cli *client) isCRDReady(name string) error {
+	var r k8sapi.CustomResourceDefinition
+	err := cli.getResource("apiextensions.k8s.io/v1beta1", "", "customresourcedefinitions", name, &r)
+	if err != nil {
+		return fmt.Errorf("get crd %s: %v", name, err)
+	}
+
+	conds := make(map[string]string) // For debugging, keep the conditions around.
+	for _, c := range r.Status.Conditions {
+		if c.Type == k8sapi.Established && c.Status == k8sapi.ConditionTrue {
+			return nil
+		}
+		conds[string(c.Type)] = string(c.Status)
+	}
+	return fmt.Errorf("crd %s not ready %#v", name, conds)
 }
 
 func (cli *client) Close() error {

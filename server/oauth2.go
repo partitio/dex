@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,9 +21,9 @@ import (
 
 	jose "gopkg.in/square/go-jose.v2"
 
-	"github.com/coreos/dex/connector"
-	"github.com/coreos/dex/server/internal"
-	"github.com/coreos/dex/storage"
+	"github.com/partitio/dex/connector"
+	"github.com/partitio/dex/server/pb"
+	"github.com/partitio/dex/storage"
 )
 
 // TODO(ericchiang): clean this file up and figure out more idiomatic error handling.
@@ -106,6 +107,7 @@ const (
 	scopeGroups            = "groups"
 	scopeEmail             = "email"
 	scopeProfile           = "profile"
+	scopeFederatedID       = "federated:id"
 	scopeCrossClientPrefix = "audience:server:client_id:"
 )
 
@@ -148,7 +150,7 @@ func signatureAlgorithm(jwk *jose.JSONWebKey) (alg jose.SignatureAlgorithm, err 
 		// value. In the future, we might want to make this configurable on a
 		// per client basis. For example allowing PS256 or ECDSA variants.
 		//
-		// See https://github.com/coreos/dex/issues/692
+		// See https://github.com/partitio/dex/issues/692
 		return jose.RS256, nil
 	case *ecdsa.PrivateKey:
 		// We don't actually support ECDSA keys yet, but they're tested for
@@ -185,7 +187,7 @@ func signPayload(key *jose.JSONWebKey, alg jose.SignatureAlgorithm, payload []by
 	return signature.CompactSerialize()
 }
 
-// The hash algorithm for the at_hash is detemrined by the signing
+// The hash algorithm for the at_hash is determined by the signing
 // algorithm used for the id_token. From the spec:
 //
 //    ...the hash algorithm used is the hash algorithm used in the alg Header
@@ -221,6 +223,15 @@ func accessTokenHash(alg jose.SignatureAlgorithm, accessToken string) (string, e
 
 type audience []string
 
+func (a audience) contains(aud string) bool {
+	for _, e := range a {
+		if aud == e {
+			return true
+		}
+	}
+	return false
+}
+
 func (a audience) MarshalJSON() ([]byte, error) {
 	if len(a) == 1 {
 		return json.Marshal(a[0])
@@ -245,6 +256,13 @@ type idTokenClaims struct {
 	Groups []string `json:"groups,omitempty"`
 
 	Name string `json:"name,omitempty"`
+
+	FederatedIDClaims *federatedIDClaims `json:"federated_claims,omitempty"`
+}
+
+type federatedIDClaims struct {
+	ConnectorID string `json:"connector_id,omitempty"`
+	UserID      string `json:"user_id,omitempty"`
 }
 
 func (s *Server) newIDToken(clientID string, claims storage.Claims, scopes []string, nonce, accessToken, connID string) (idToken string, expiry time.Time, err error) {
@@ -266,12 +284,12 @@ func (s *Server) newIDToken(clientID string, claims storage.Claims, scopes []str
 	issuedAt := s.now()
 	expiry = issuedAt.Add(s.idTokensValidFor)
 
-	sub := &internal.IDTokenSubject{
+	sub := &pb.IDTokenSubject{
 		UserId: claims.UserID,
 		ConnId: connID,
 	}
 
-	subjectString, err := internal.Marshal(sub)
+	subjectString, err := pb.Marshal(sub)
 	if err != nil {
 		s.logger.Errorf("failed to marshal offline session ID: %v", err)
 		return "", expiry, fmt.Errorf("failed to marshal offline session ID: %v", err)
@@ -303,6 +321,11 @@ func (s *Server) newIDToken(clientID string, claims storage.Claims, scopes []str
 			tok.Groups = claims.Groups
 		case scope == scopeProfile:
 			tok.Name = claims.Username
+		case scope == scopeFederatedID:
+			tok.FederatedIDClaims = &federatedIDClaims{
+				ConnectorID: connID,
+				UserID:      claims.UserID,
+			}
 		default:
 			peerID, ok := parseCrossClientScope(scope)
 			if !ok {
@@ -327,8 +350,13 @@ func (s *Server) newIDToken(clientID string, claims storage.Claims, scopes []str
 		// client as the audience.
 		tok.Audience = audience{clientID}
 	} else {
-		// Client asked for cross client audience. The current client
-		// becomes the authorizing party.
+		// Client asked for cross client audience:
+		// if the current client was not requested explicitly
+		if !tok.Audience.contains(clientID) {
+			// by default it becomes one of entries in Audience
+			tok.Audience = append(tok.Audience, clientID)
+		}
+		// The current client becomes the authorizing party.
 		tok.AuthorizingParty = clientID
 	}
 
@@ -390,7 +418,7 @@ func (s *Server) parseAuthorizationRequest(r *http.Request) (req storage.AuthReq
 		switch scope {
 		case scopeOpenID:
 			hasOpenIDScope = true
-		case scopeOfflineAccess, scopeEmail, scopeProfile, scopeGroups:
+		case scopeOfflineAccess, scopeEmail, scopeProfile, scopeGroups, scopeFederatedID:
 		default:
 			peerID, ok := parseCrossClientScope(scope)
 			if !ok {
@@ -518,9 +546,18 @@ func validateRedirectURI(client storage.Client, redirectURI string) bool {
 	if redirectURI == redirectURIOOB {
 		return true
 	}
-	if !strings.HasPrefix(redirectURI, "http://localhost:") {
+
+	// verify that the host is of form "http://localhost:(port)(path)" or "http://localhost(path)"
+	u, err := url.Parse(redirectURI)
+	if err != nil {
 		return false
 	}
-	n, err := strconv.Atoi(strings.TrimPrefix(redirectURI, "https://localhost:"))
-	return err == nil && n <= 0
+	if u.Scheme != "http" {
+		return false
+	}
+	if u.Host == "localhost" {
+		return true
+	}
+	host, _, err := net.SplitHostPort(u.Host)
+	return err == nil && host == "localhost"
 }
