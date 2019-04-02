@@ -25,12 +25,30 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type Dex struct {
-	config Config
-	logger log.Logger
+// RegisterConnector allows to register a dex connector dynamically
+// Il should be registered before creating a dex instance
+func RegisterConnector(name string, config func() server.ConnectorConfig) error {
+	if _, ok := server.ConnectorsConfig[name]; ok {
+		return errors.New("connector name already exists")
+	}
+	if config == nil {
+		return errors.New("config cannot be nil")
+	}
+	server.ConnectorsConfig[name] = config
+	return nil
 }
 
-func NewDex(c Config) (*Dex, error) {
+type dex struct {
+	config       Config
+	serverConfig server.Config
+
+	logger             log.Logger
+	prometheusRegistry prometheus.Gatherer
+	options            []micro.Option
+}
+
+// NewDex create a new dex instance from the config c
+func NewDex(c Config) (*dex, error) {
 	logger, err := newLogger(c.Logger.Level, c.Logger.Format)
 	if err != nil {
 		return nil, fmt.Errorf("invalid config: %v", err)
@@ -61,16 +79,13 @@ func NewDex(c Config) (*Dex, error) {
 			return nil, fmt.Errorf("invalid config: %s", check.errMsg)
 		}
 	}
-	return &Dex{c, logger}, nil
-}
 
-func (d *Dex) Run() error {
-	d.logger.Infof("config issuer: %s", d.config.Issuer)
+	logger.Infof("config issuer: %s", c.Issuer)
 
 	prometheusRegistry := prometheus.NewRegistry()
-	err := prometheusRegistry.Register(prometheus.NewGoCollector())
+	err = prometheusRegistry.Register(prometheus.NewGoCollector())
 	if err != nil {
-		return fmt.Errorf("failed to register Go runtime metrics: %v", err)
+		return nil, fmt.Errorf("failed to register Go runtime metrics: %v", err)
 	}
 
 	err = prometheusRegistry.Register(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{
@@ -79,7 +94,7 @@ func (d *Dex) Run() error {
 		},
 	}))
 	if err != nil {
-		return fmt.Errorf("failed to register process metrics: %v", err)
+		return nil, fmt.Errorf("failed to register process metrics: %v", err)
 	}
 
 	//grpcMetrics := grpcprometheus.NewServerMetrics()
@@ -90,11 +105,11 @@ func (d *Dex) Run() error {
 
 	var options []micro.Option
 
-	if d.config.GRPC.TLSCert != "" {
+	if c.GRPC.TLSCert != "" {
 		// Parse certificates from certificate file and key file for server.
-		cert, err := tls.LoadX509KeyPair(d.config.GRPC.TLSCert, d.config.GRPC.TLSKey)
+		cert, err := tls.LoadX509KeyPair(c.GRPC.TLSCert, c.GRPC.TLSKey)
 		if err != nil {
-			return fmt.Errorf("invalid config: error parsing gRPC certificate file: %v", err)
+			return nil, fmt.Errorf("invalid config: error parsing gRPC certificate file: %v", err)
 		}
 
 		tlsConfig := tls.Config{
@@ -103,15 +118,15 @@ func (d *Dex) Run() error {
 			PreferServerCipherSuites: true,
 		}
 
-		if d.config.GRPC.TLSClientCA != "" {
+		if c.GRPC.TLSClientCA != "" {
 			// Parse certificates from client CA file to a new CertPool.
 			cPool := x509.NewCertPool()
-			clientCert, err := ioutil.ReadFile(d.config.GRPC.TLSClientCA)
+			clientCert, err := ioutil.ReadFile(c.GRPC.TLSClientCA)
 			if err != nil {
-				return fmt.Errorf("invalid config: reading from client CA file: %v", err)
+				return nil, fmt.Errorf("invalid config: reading from client CA file: %v", err)
 			}
 			if cPool.AppendCertsFromPEM(clientCert) != true {
-				return errors.New("invalid config: failed to parse client CA")
+				return nil, errors.New("invalid config: failed to parse client CA")
 			}
 
 			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
@@ -121,116 +136,120 @@ func (d *Dex) Run() error {
 		options = append(options, micro.Transport(transport.NewTransport(transport.TLSConfig(&tlsConfig))))
 	}
 
-	s, err := d.config.Storage.Config.Open(d.logger)
+	s, err := c.Storage.Config.Open(logger)
 	if err != nil {
-		return fmt.Errorf("failed to initialize storage: %v", err)
+		return nil, fmt.Errorf("failed to initialize storage: %v", err)
 	}
-	d.logger.Infof("config storage: %s", d.config.Storage.Type)
+	logger.Infof("config storage: %s", c.Storage.Type)
 
-	if len(d.config.StaticClients) > 0 {
-		for _, client := range d.config.StaticClients {
-			d.logger.Infof("config static client: %s", client.ID)
+	if len(c.StaticClients) > 0 {
+		for _, client := range c.StaticClients {
+			logger.Infof("config static client: %s", client.ID)
 		}
-		s = storage.WithStaticClients(s, d.config.StaticClients)
+		s = storage.WithStaticClients(s, c.StaticClients)
 	}
-	if len(d.config.StaticPasswords) > 0 {
-		passwords := make([]storage.Password, len(d.config.StaticPasswords))
-		for i, p := range d.config.StaticPasswords {
+	if len(c.StaticPasswords) > 0 {
+		passwords := make([]storage.Password, len(c.StaticPasswords))
+		for i, p := range c.StaticPasswords {
 			passwords[i] = storage.Password(p)
 		}
-		s = storage.WithStaticPasswords(s, passwords, d.logger)
+		s = storage.WithStaticPasswords(s, passwords, logger)
 	}
 
-	storageConnectors := make([]storage.Connector, len(d.config.StaticConnectors))
-	for i, c := range d.config.StaticConnectors {
+	storageConnectors := make([]storage.Connector, len(c.StaticConnectors))
+	for i, c := range c.StaticConnectors {
 		if c.ID == "" || c.Name == "" || c.Type == "" {
-			return fmt.Errorf("invalid config: ID, Type and Name fields are required for a connector")
+			return nil, fmt.Errorf("invalid config: ID, Type and Name fields are required for a connector")
 		}
 		if c.Config == nil {
-			return fmt.Errorf("invalid config: no config field for connector %q", c.ID)
+			return nil, fmt.Errorf("invalid config: no config field for connector %q", c.ID)
 		}
-		d.logger.Infof("config connector: %s", c.ID)
+		logger.Infof("config connector: %s", c.ID)
 
 		// convert to a storage connector object
 		conn, err := ToStorageConnector(c)
 		if err != nil {
-			return fmt.Errorf("failed to initialize storage connectors: %v", err)
+			return nil, fmt.Errorf("failed to initialize storage connectors: %v", err)
 		}
 		storageConnectors[i] = conn
 
 	}
 
-	if d.config.EnablePasswordDB {
+	if c.EnablePasswordDB {
 		storageConnectors = append(storageConnectors, storage.Connector{
 			ID:   server.LocalConnector,
 			Name: "Email",
 			Type: server.LocalConnector,
 		})
-		d.logger.Infof("config connector: local passwords enabled")
+		logger.Infof("config connector: local passwords enabled")
 	}
 
 	s = storage.WithStaticConnectors(s, storageConnectors)
 
-	if len(d.config.OAuth2.ResponseTypes) > 0 {
-		d.logger.Infof("config response types accepted: %s", d.config.OAuth2.ResponseTypes)
+	if len(c.OAuth2.ResponseTypes) > 0 {
+		logger.Infof("config response types accepted: %s", c.OAuth2.ResponseTypes)
 	}
-	if d.config.OAuth2.SkipApprovalScreen {
-		d.logger.Infof("config skipping approval screen")
+	if c.OAuth2.SkipApprovalScreen {
+		logger.Infof("config skipping approval screen")
 	}
-	if d.config.OAuth2.PasswordConnector != "" {
-		d.logger.Infof("config using password grant connector: %s", d.config.OAuth2.PasswordConnector)
+	if c.OAuth2.PasswordConnector != "" {
+		logger.Infof("config using password grant connector: %s", c.OAuth2.PasswordConnector)
 	}
-	if len(d.config.Web.AllowedOrigins) > 0 {
-		d.logger.Infof("config allowed origins: %s", d.config.Web.AllowedOrigins)
+	if len(c.Web.AllowedOrigins) > 0 {
+		logger.Infof("config allowed origins: %s", c.Web.AllowedOrigins)
 	}
 
 	// explicitly convert to UTC.
 	now := func() time.Time { return time.Now().UTC() }
 
 	serverConfig := server.Config{
-		SupportedResponseTypes: d.config.OAuth2.ResponseTypes,
-		SkipApprovalScreen:     d.config.OAuth2.SkipApprovalScreen,
-		PasswordConnector:      d.config.OAuth2.PasswordConnector,
-		AllowedOrigins:         d.config.Web.AllowedOrigins,
-		Issuer:                 d.config.Issuer,
+		SupportedResponseTypes: c.OAuth2.ResponseTypes,
+		SkipApprovalScreen:     c.OAuth2.SkipApprovalScreen,
+		PasswordConnector:      c.OAuth2.PasswordConnector,
+		AllowedOrigins:         c.Web.AllowedOrigins,
+		Issuer:                 c.Issuer,
 		Storage:                s,
-		Web:                    d.config.Frontend,
-		Logger:                 d.logger,
+		Web:                    c.Frontend,
+		Logger:                 logger,
 		Now:                    now,
 		PrometheusRegistry:     prometheusRegistry,
 	}
-	if d.config.Expiry.SigningKeys != "" {
-		signingKeys, err := time.ParseDuration(d.config.Expiry.SigningKeys)
+	if c.Expiry.SigningKeys != "" {
+		signingKeys, err := time.ParseDuration(c.Expiry.SigningKeys)
 		if err != nil {
-			return fmt.Errorf("invalid config value %q for signing keys expiry: %v", d.config.Expiry.SigningKeys, err)
+			return nil, fmt.Errorf("invalid config value %q for signing keys expiry: %v", c.Expiry.SigningKeys, err)
 		}
-		d.logger.Infof("config signing keys expire after: %v", signingKeys)
+		logger.Infof("config signing keys expire after: %v", signingKeys)
 		serverConfig.RotateKeysAfter = signingKeys
 	}
-	if d.config.Expiry.IDTokens != "" {
-		idTokens, err := time.ParseDuration(d.config.Expiry.IDTokens)
+	if c.Expiry.IDTokens != "" {
+		idTokens, err := time.ParseDuration(c.Expiry.IDTokens)
 		if err != nil {
-			return fmt.Errorf("invalid config value %q for id token expiry: %v", d.config.Expiry.IDTokens, err)
+			return nil, fmt.Errorf("invalid config value %q for id token expiry: %v", c.Expiry.IDTokens, err)
 		}
-		d.logger.Infof("config id tokens valid for: %v", idTokens)
+		logger.Infof("config id tokens valid for: %v", idTokens)
 		serverConfig.IDTokensValidFor = idTokens
 	}
-	if d.config.Expiry.AuthRequests != "" {
-		authRequests, err := time.ParseDuration(d.config.Expiry.AuthRequests)
+	if c.Expiry.AuthRequests != "" {
+		authRequests, err := time.ParseDuration(c.Expiry.AuthRequests)
 		if err != nil {
-			return fmt.Errorf("invalid config value %q for auth request expiry: %v", d.config.Expiry.AuthRequests, err)
+			return nil, fmt.Errorf("invalid config value %q for auth request expiry: %v", c.Expiry.AuthRequests, err)
 		}
-		d.logger.Infof("config auth requests valid for: %v", authRequests)
+		logger.Infof("config auth requests valid for: %v", authRequests)
 		serverConfig.AuthRequestsValidFor = authRequests
 	}
+	return &dex{c, serverConfig, logger, prometheusRegistry, options}, nil
+}
 
-	serv, err := server.NewServer(context.Background(), serverConfig)
+// Run launch the dex instance servers
+func (d *dex) Run() error {
+	serv, err := server.NewServer(context.Background(), d.serverConfig)
 	if err != nil {
 		return fmt.Errorf("failed to initialize server: %v", err)
 	}
 
 	telemetryServ := http.NewServeMux()
-	telemetryServ.Handle("/metrics", promhttp.HandlerFor(prometheusRegistry, promhttp.HandlerOpts{}))
+	telemetryServ.Handle("/metrics", promhttp.HandlerFor(d.prometheusRegistry, promhttp.HandlerOpts{}))
 
 	errc := make(chan error, 3)
 	if d.config.Telemetry.HTTP != "" {
@@ -265,15 +284,15 @@ func (d *Dex) Run() error {
 	}
 	if d.config.GRPC.Addr != "" {
 		d.logger.Infof("listening (grpc) on %s", d.config.GRPC.Addr)
-		options = append(options, micro.Address(d.config.GRPC.Addr))
+		d.options = append(d.options, micro.Address(d.config.GRPC.Addr))
 		go func() {
 			errc <- func() error {
-				options = append(options,
+				d.options = append(d.options,
 					micro.Name(server.DexAPI),
 					micro.WrapHandler(mprom.NewHandlerWrapper()),
 				)
-				s := micro.NewService(options...)
-				if err := api.RegisterDexHandler(s.Server(), server.NewAPI(serverConfig.Storage, d.logger)); err != nil {
+				s := micro.NewService(d.options...)
+				if err := api.RegisterDexHandler(s.Server(), server.NewAPI(d.serverConfig.Storage, d.logger)); err != nil {
 					return err
 				}
 				//grpcMetrics.InitializeMetrics(s)
