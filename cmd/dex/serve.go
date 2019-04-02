@@ -63,9 +63,22 @@ func serve(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("error parse config file %s: %v", configFile, err)
 	}
 
+	d, err := NewDex(c)
+	if err != nil {
+		return err
+	}
+	return d.Run()
+}
+
+type Dex struct {
+	config Config
+	logger log.Logger
+}
+
+func NewDex(c Config) (*Dex, error) {
 	logger, err := newLogger(c.Logger.Level, c.Logger.Format)
 	if err != nil {
-		return fmt.Errorf("invalid config: %v", err)
+		return nil, fmt.Errorf("invalid config: %v", err)
 	}
 	if c.Logger.Level != "" {
 		logger.Infof("config using log level: %s", c.Logger.Level)
@@ -90,14 +103,17 @@ func serve(cmd *cobra.Command, args []string) error {
 
 	for _, check := range checks {
 		if check.bad {
-			return fmt.Errorf("invalid config: %s", check.errMsg)
+			return nil, fmt.Errorf("invalid config: %s", check.errMsg)
 		}
 	}
+	return &Dex{c, logger}, nil
+}
 
-	logger.Infof("config issuer: %s", c.Issuer)
+func (d *Dex) Run() error {
+	d.logger.Infof("config issuer: %s", d.config.Issuer)
 
 	prometheusRegistry := prometheus.NewRegistry()
-	err = prometheusRegistry.Register(prometheus.NewGoCollector())
+	err := prometheusRegistry.Register(prometheus.NewGoCollector())
 	if err != nil {
 		return fmt.Errorf("failed to register Go runtime metrics: %v", err)
 	}
@@ -119,9 +135,9 @@ func serve(cmd *cobra.Command, args []string) error {
 
 	var options []micro.Option
 
-	if c.GRPC.TLSCert != "" {
+	if d.config.GRPC.TLSCert != "" {
 		// Parse certificates from certificate file and key file for server.
-		cert, err := tls.LoadX509KeyPair(c.GRPC.TLSCert, c.GRPC.TLSKey)
+		cert, err := tls.LoadX509KeyPair(d.config.GRPC.TLSCert, d.config.GRPC.TLSKey)
 		if err != nil {
 			return fmt.Errorf("invalid config: error parsing gRPC certificate file: %v", err)
 		}
@@ -132,10 +148,10 @@ func serve(cmd *cobra.Command, args []string) error {
 			PreferServerCipherSuites: true,
 		}
 
-		if c.GRPC.TLSClientCA != "" {
+		if d.config.GRPC.TLSClientCA != "" {
 			// Parse certificates from client CA file to a new CertPool.
 			cPool := x509.NewCertPool()
-			clientCert, err := ioutil.ReadFile(c.GRPC.TLSClientCA)
+			clientCert, err := ioutil.ReadFile(d.config.GRPC.TLSClientCA)
 			if err != nil {
 				return fmt.Errorf("invalid config: reading from client CA file: %v", err)
 			}
@@ -150,35 +166,35 @@ func serve(cmd *cobra.Command, args []string) error {
 		options = append(options, micro.Transport(transport.NewTransport(transport.TLSConfig(&tlsConfig))))
 	}
 
-	s, err := c.Storage.Config.Open(logger)
+	s, err := d.config.Storage.Config.Open(d.logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize storage: %v", err)
 	}
-	logger.Infof("config storage: %s", c.Storage.Type)
+	d.logger.Infof("config storage: %s", d.config.Storage.Type)
 
-	if len(c.StaticClients) > 0 {
-		for _, client := range c.StaticClients {
-			logger.Infof("config static client: %s", client.ID)
+	if len(d.config.StaticClients) > 0 {
+		for _, client := range d.config.StaticClients {
+			d.logger.Infof("config static client: %s", client.ID)
 		}
-		s = storage.WithStaticClients(s, c.StaticClients)
+		s = storage.WithStaticClients(s, d.config.StaticClients)
 	}
-	if len(c.StaticPasswords) > 0 {
-		passwords := make([]storage.Password, len(c.StaticPasswords))
-		for i, p := range c.StaticPasswords {
+	if len(d.config.StaticPasswords) > 0 {
+		passwords := make([]storage.Password, len(d.config.StaticPasswords))
+		for i, p := range d.config.StaticPasswords {
 			passwords[i] = storage.Password(p)
 		}
-		s = storage.WithStaticPasswords(s, passwords, logger)
+		s = storage.WithStaticPasswords(s, passwords, d.logger)
 	}
 
-	storageConnectors := make([]storage.Connector, len(c.StaticConnectors))
-	for i, c := range c.StaticConnectors {
+	storageConnectors := make([]storage.Connector, len(d.config.StaticConnectors))
+	for i, c := range d.config.StaticConnectors {
 		if c.ID == "" || c.Name == "" || c.Type == "" {
 			return fmt.Errorf("invalid config: ID, Type and Name fields are required for a connector")
 		}
 		if c.Config == nil {
 			return fmt.Errorf("invalid config: no config field for connector %q", c.ID)
 		}
-		logger.Infof("config connector: %s", c.ID)
+		d.logger.Infof("config connector: %s", c.ID)
 
 		// convert to a storage connector object
 		conn, err := ToStorageConnector(c)
@@ -189,67 +205,67 @@ func serve(cmd *cobra.Command, args []string) error {
 
 	}
 
-	if c.EnablePasswordDB {
+	if d.config.EnablePasswordDB {
 		storageConnectors = append(storageConnectors, storage.Connector{
 			ID:   server.LocalConnector,
 			Name: "Email",
 			Type: server.LocalConnector,
 		})
-		logger.Infof("config connector: local passwords enabled")
+		d.logger.Infof("config connector: local passwords enabled")
 	}
 
 	s = storage.WithStaticConnectors(s, storageConnectors)
 
-	if len(c.OAuth2.ResponseTypes) > 0 {
-		logger.Infof("config response types accepted: %s", c.OAuth2.ResponseTypes)
+	if len(d.config.OAuth2.ResponseTypes) > 0 {
+		d.logger.Infof("config response types accepted: %s", d.config.OAuth2.ResponseTypes)
 	}
-	if c.OAuth2.SkipApprovalScreen {
-		logger.Infof("config skipping approval screen")
+	if d.config.OAuth2.SkipApprovalScreen {
+		d.logger.Infof("config skipping approval screen")
 	}
-	if c.OAuth2.PasswordConnector != "" {
-		logger.Infof("config using password grant connector: %s", c.OAuth2.PasswordConnector)
+	if d.config.OAuth2.PasswordConnector != "" {
+		d.logger.Infof("config using password grant connector: %s", d.config.OAuth2.PasswordConnector)
 	}
-	if len(c.Web.AllowedOrigins) > 0 {
-		logger.Infof("config allowed origins: %s", c.Web.AllowedOrigins)
+	if len(d.config.Web.AllowedOrigins) > 0 {
+		d.logger.Infof("config allowed origins: %s", d.config.Web.AllowedOrigins)
 	}
 
 	// explicitly convert to UTC.
 	now := func() time.Time { return time.Now().UTC() }
 
 	serverConfig := server.Config{
-		SupportedResponseTypes: c.OAuth2.ResponseTypes,
-		SkipApprovalScreen:     c.OAuth2.SkipApprovalScreen,
-		PasswordConnector:      c.OAuth2.PasswordConnector,
-		AllowedOrigins:         c.Web.AllowedOrigins,
-		Issuer:                 c.Issuer,
+		SupportedResponseTypes: d.config.OAuth2.ResponseTypes,
+		SkipApprovalScreen:     d.config.OAuth2.SkipApprovalScreen,
+		PasswordConnector:      d.config.OAuth2.PasswordConnector,
+		AllowedOrigins:         d.config.Web.AllowedOrigins,
+		Issuer:                 d.config.Issuer,
 		Storage:                s,
-		Web:                    c.Frontend,
-		Logger:                 logger,
+		Web:                    d.config.Frontend,
+		Logger:                 d.logger,
 		Now:                    now,
 		PrometheusRegistry:     prometheusRegistry,
 	}
-	if c.Expiry.SigningKeys != "" {
-		signingKeys, err := time.ParseDuration(c.Expiry.SigningKeys)
+	if d.config.Expiry.SigningKeys != "" {
+		signingKeys, err := time.ParseDuration(d.config.Expiry.SigningKeys)
 		if err != nil {
-			return fmt.Errorf("invalid config value %q for signing keys expiry: %v", c.Expiry.SigningKeys, err)
+			return fmt.Errorf("invalid config value %q for signing keys expiry: %v", d.config.Expiry.SigningKeys, err)
 		}
-		logger.Infof("config signing keys expire after: %v", signingKeys)
+		d.logger.Infof("config signing keys expire after: %v", signingKeys)
 		serverConfig.RotateKeysAfter = signingKeys
 	}
-	if c.Expiry.IDTokens != "" {
-		idTokens, err := time.ParseDuration(c.Expiry.IDTokens)
+	if d.config.Expiry.IDTokens != "" {
+		idTokens, err := time.ParseDuration(d.config.Expiry.IDTokens)
 		if err != nil {
-			return fmt.Errorf("invalid config value %q for id token expiry: %v", c.Expiry.IDTokens, err)
+			return fmt.Errorf("invalid config value %q for id token expiry: %v", d.config.Expiry.IDTokens, err)
 		}
-		logger.Infof("config id tokens valid for: %v", idTokens)
+		d.logger.Infof("config id tokens valid for: %v", idTokens)
 		serverConfig.IDTokensValidFor = idTokens
 	}
-	if c.Expiry.AuthRequests != "" {
-		authRequests, err := time.ParseDuration(c.Expiry.AuthRequests)
+	if d.config.Expiry.AuthRequests != "" {
+		authRequests, err := time.ParseDuration(d.config.Expiry.AuthRequests)
 		if err != nil {
-			return fmt.Errorf("invalid config value %q for auth request expiry: %v", c.Expiry.AuthRequests, err)
+			return fmt.Errorf("invalid config value %q for auth request expiry: %v", d.config.Expiry.AuthRequests, err)
 		}
-		logger.Infof("config auth requests valid for: %v", authRequests)
+		d.logger.Infof("config auth requests valid for: %v", authRequests)
 		serverConfig.AuthRequestsValidFor = authRequests
 	}
 
@@ -262,23 +278,23 @@ func serve(cmd *cobra.Command, args []string) error {
 	telemetryServ.Handle("/metrics", promhttp.HandlerFor(prometheusRegistry, promhttp.HandlerOpts{}))
 
 	errc := make(chan error, 3)
-	if c.Telemetry.HTTP != "" {
-		logger.Infof("listening (http/telemetry) on %s", c.Telemetry.HTTP)
+	if d.config.Telemetry.HTTP != "" {
+		d.logger.Infof("listening (http/telemetry) on %s", d.config.Telemetry.HTTP)
 		go func() {
-			err := http.ListenAndServe(c.Telemetry.HTTP, telemetryServ)
-			errc <- fmt.Errorf("listening on %s failed: %v", c.Telemetry.HTTP, err)
+			err := http.ListenAndServe(d.config.Telemetry.HTTP, telemetryServ)
+			errc <- fmt.Errorf("listening on %s failed: %v", d.config.Telemetry.HTTP, err)
 		}()
 	}
-	if c.Web.HTTP != "" {
-		logger.Infof("listening (http) on %s", c.Web.HTTP)
+	if d.config.Web.HTTP != "" {
+		d.logger.Infof("listening (http) on %s", d.config.Web.HTTP)
 		go func() {
-			err := http.ListenAndServe(c.Web.HTTP, serv)
-			errc <- fmt.Errorf("listening on %s failed: %v", c.Web.HTTP, err)
+			err := http.ListenAndServe(d.config.Web.HTTP, serv)
+			errc <- fmt.Errorf("listening on %s failed: %v", d.config.Web.HTTP, err)
 		}()
 	}
-	if c.Web.HTTPS != "" {
+	if d.config.Web.HTTPS != "" {
 		httpsSrv := &http.Server{
-			Addr:    c.Web.HTTPS,
+			Addr:    d.config.Web.HTTPS,
 			Handler: serv,
 			TLSConfig: &tls.Config{
 				PreferServerCipherSuites: true,
@@ -286,15 +302,15 @@ func serve(cmd *cobra.Command, args []string) error {
 			},
 		}
 
-		logger.Infof("listening (https) on %s", c.Web.HTTPS)
+		d.logger.Infof("listening (https) on %s", d.config.Web.HTTPS)
 		go func() {
-			err = httpsSrv.ListenAndServeTLS(c.Web.TLSCert, c.Web.TLSKey)
-			errc <- fmt.Errorf("listening on %s failed: %v", c.Web.HTTPS, err)
+			err = httpsSrv.ListenAndServeTLS(d.config.Web.TLSCert, d.config.Web.TLSKey)
+			errc <- fmt.Errorf("listening on %s failed: %v", d.config.Web.HTTPS, err)
 		}()
 	}
-	if c.GRPC.Addr != "" {
-		logger.Infof("listening (grpc) on %s", c.GRPC.Addr)
-		options = append(options, micro.Address(c.GRPC.Addr))
+	if d.config.GRPC.Addr != "" {
+		d.logger.Infof("listening (grpc) on %s", d.config.GRPC.Addr)
+		options = append(options, micro.Address(d.config.GRPC.Addr))
 		go func() {
 			errc <- func() error {
 				options = append(options,
@@ -302,12 +318,12 @@ func serve(cmd *cobra.Command, args []string) error {
 					micro.WrapHandler(mprom.NewHandlerWrapper()),
 				)
 				s := micro.NewService(options...)
-				if err := api.RegisterDexHandler(s.Server(), server.NewAPI(serverConfig.Storage, logger)); err != nil {
+				if err := api.RegisterDexHandler(s.Server(), server.NewAPI(serverConfig.Storage, d.logger)); err != nil {
 					return err
 				}
 				//grpcMetrics.InitializeMetrics(s)
 				err = s.Run()
-				return fmt.Errorf("listening on %s failed: %v", c.GRPC.Addr, err)
+				return fmt.Errorf("listening on %s failed: %v", d.config.GRPC.Addr, err)
 			}()
 		}()
 	}
