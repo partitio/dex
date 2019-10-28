@@ -8,10 +8,11 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"gopkg.in/ldap.v2"
 
 	"github.com/dexidp/dex/connector"
-	dldap "github.com/dexidp/dex/connector/ldap"
 	"github.com/dexidp/dex/pkg/log"
 )
 
@@ -24,6 +25,22 @@ import (
 //
 //     type: ldap-aggregator
 //     config:
+//       # if not set server is disabled
+//       grpc:
+//         addr: 127.0.0.1:5559
+//         tlsCert: examples/grpc-client/server.crt
+//         tlsKey: examples/grpc-client/server.key
+//         tlsClientCA: /etc/dex/client.crt
+//       db:
+//	       host: postgres
+//	       port: 5432
+//	       ssl: false
+//	       username: dex
+//	       password: P@ssword
+//	       database: ldap
+//       # servers are only used to bootstrap some ldap servers
+//       # once the database is initialized, the database will override
+//       # on any duplicated ldap server configuration
 //       servers:
 //       - host: ldap.example.com:636
 //       # The following field is required if using port 389.
@@ -51,11 +68,26 @@ import (
 //           nameAttr: name
 //
 type Config struct {
-	Servers []*dldap.Config `json:"servers"`
+	GRPC    *GRPC           `json:"grpc"`
+	DB      *PostgresConfig `json:"db"`
+	Servers []*LdapConfig   `json:"servers"`
 	// UsernamePrompt allows users to override the username attribute (displayed
 	// in the username/password prompt). If unset, the handler will use
 	// "Username".
 	UsernamePrompt string `json:"usernamePrompt"`
+}
+
+func (c *Config) ApiEnabled() bool {
+	return c.GRPC != nil
+}
+
+type PostgresConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	SSL      bool   `json:"ssl"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Database string `json:"database"`
 }
 
 // Open returns an authentication strategy using LDAP.
@@ -77,23 +109,67 @@ func (c *Config) OpenConnector(logger log.Logger) (interface {
 }
 
 func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, error) {
-	var acs []*ldapServer
-	for _, acc := range c.Servers {
-		ac, err := acc.OpenConnector(logger)
+	var db *gorm.DB
+	var err error
+	var ss []*LdapConfig
+	if c.ApiEnabled() {
+		db, err = c.openGormDB()
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to database: %v", err)
+		}
+		if err := db.AutoMigrate(&LdapConfigORM{}, &GroupSearchORM{}, &UserSearchORM{}).Error; err != nil {
+			return nil, fmt.Errorf("failed to migrate database: %v", err)
+		}
+		// Check if db contains ldap servers
+		ss, err = DefaultListLdapConfig(context.Background(), db)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// Append servers from config file after db servers as db take precedence over config file
+	c.Servers = append(ss, c.Servers...)
+	var ldapServers []*ldapServer
+	for i, ldapConfig := range c.Servers {
+		if i > 0 && contains(c.Servers[:i], ldapConfig) {
+			continue
+		}
+		conn, err := ldapConfig.OpenConnector(logger)
 		if err != nil {
 			logger.Errorf("invalid aggregated ldap: %s", err)
 			continue
 		}
-		acs = append(acs, &ldapServer{*acc, ac})
+		ldapConfig.Id = ldapConfig.Host
+		if c.ApiEnabled() {
+			if _, err := DefaultStrictUpdateLdapConfig(context.Background(), ldapConfig, db); err != nil {
+				return nil, err
+			}
+		}
+		ldapServers = append(ldapServers, &ldapServer{*ldapConfig, conn})
 	}
-	if len(acs) == 0 {
-		return nil, errors.New("no valid aggregated connectors supplied")
+	conn := &ldapAggregatorConnector{Config: *c, ldapConnectors: ldapServers, logger: logger, LdapAggregatorDefaultServer: &LdapAggregatorDefaultServer{db}}
+	err = conn.Run()
+	return conn, err
+}
+
+func (c *Config) openGormDB() (*gorm.DB, error) {
+	if c.DB == nil {
+		return nil, errors.New("ldap-aggregator: no db config")
 	}
-	return &ldapAggregatorConnector{*c, acs, logger}, nil
+	dbPath := fmt.Sprintf("user=%s password=%s host=%s port=%d dbname=%s",
+		c.DB.Username,
+		c.DB.Password,
+		c.DB.Host,
+		c.DB.Port,
+		c.DB.Database,
+	)
+	if !c.DB.SSL {
+		dbPath += " sslmode=disable"
+	}
+	return gorm.Open("postgres", dbPath)
 }
 
 type ldapServer struct {
-	conf dldap.Config
+	conf LdapConfig
 	conn interface {
 		connector.Connector
 		connector.PasswordConnector
@@ -105,6 +181,8 @@ type ldapAggregatorConnector struct {
 	Config
 	ldapConnectors []*ldapServer
 	logger         log.Logger
+	m              sync.RWMutex
+	*LdapAggregatorDefaultServer
 }
 
 type refreshData struct {
@@ -125,6 +203,8 @@ func (c *ldapAggregatorConnector) Login(ctx context.Context, s connector.Scopes,
 		source    string
 	}
 	results := make(chan result)
+	c.m.RLock()
+	defer c.m.Unlock()
 	var wg sync.WaitGroup
 	for _, l := range c.ldapConnectors {
 		wg.Add(1)
@@ -163,6 +243,8 @@ func (c *ldapAggregatorConnector) Refresh(ctx context.Context, s connector.Scope
 		return ident, fmt.Errorf("ldap-aggregator: failed to unmarshal internal data: %v", err)
 	}
 	var a *ldapServer
+	c.m.RLock()
+	defer c.m.Unlock()
 	for _, ac := range c.ldapConnectors {
 		if ac.conf.Host == data.Source {
 			a = ac
@@ -203,4 +285,13 @@ func (c *ldapAggregatorConnector) Prompt() string {
 		return c.UsernamePrompt
 	}
 	return "id"
+}
+
+func contains(cs []*LdapConfig, c *LdapConfig) bool {
+	for _, cc := range cs {
+		if cc.Host == c.Host {
+			return true
+		}
+	}
+	return false
 }

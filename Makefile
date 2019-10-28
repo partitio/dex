@@ -58,10 +58,16 @@ lint: bin/golint
 docker-image:
 	@sudo docker build -t $(DOCKER_IMAGE) .
 
+LDAP_AGGREGATOR_PROTOS := ./connector/ldap-aggregator
 .PHONY: proto
-proto: bin/protoc bin/protoc-gen-go
+proto: bin/protoc bin/protoc-gen-go bin/protoc-gen-gorm
 	@./bin/protoc --go_out=plugins=grpc:. --plugin=protoc-gen-go=./bin/protoc-gen-go api/*.proto
 	@./bin/protoc --go_out=. --plugin=protoc-gen-go=./bin/protoc-gen-go server/internal/*.proto
+	@./bin/protoc -I./vendor -I/usr/local/include -I$(LDAP_AGGREGATOR_PROTOS) \
+		--go_out=plugins=grpc:$(LDAP_AGGREGATOR_PROTOS) \
+		--gorm_out=$(LDAP_AGGREGATOR_PROTOS) \
+		--plugin=protoc-gen-go=./bin/protoc-gen-go \
+		$(LDAP_AGGREGATOR_PROTOS)/*.proto
 
 .PHONY: verify-proto
 verify-proto: proto
@@ -69,6 +75,9 @@ verify-proto: proto
 
 bin/protoc: scripts/get-protoc
 	@./scripts/get-protoc bin/protoc
+
+bin/protoc-gen-gorm:
+	# @go install -v $(THIS_DIRECTORY)/vendor/github.com/infobloxopen/protoc-gen-gorm
 
 bin/protoc-gen-go:
 	@go install -v $(REPO_PATH)/vendor/github.com/golang/protobuf/protoc-gen-go

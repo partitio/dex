@@ -1,6 +1,7 @@
 module github.com/dexidp/dex
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.3.3 // indirect
 	github.com/beevik/etree v1.1.0
 	github.com/coreos/bbolt v1.3.3 // indirect
 	github.com/coreos/etcd v3.3.13+incompatible
@@ -8,7 +9,9 @@ require (
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
 	github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f // indirect
+	github.com/denisenkom/go-mssqldb v0.0.0-20191001013358-cfbb681360f0 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
+	github.com/erikstmartin/go-testdb v0.0.0-20160219214506-8d10e4a1bae5 // indirect
 	github.com/felixge/httpsnoop v1.0.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-sql-driver/mysql v1.4.1
@@ -23,6 +26,10 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/grpc-ecosystem/grpc-gateway v1.9.5 // indirect
 	github.com/gtank/cryptopasta v0.0.0-20170601214702-1f550f6f2f69
+	github.com/infobloxopen/atlas-app-toolkit v0.0.0-20180810144038-3237ef051031
+	github.com/infobloxopen/protoc-gen-gorm v0.18.0
+	github.com/jinzhu/gorm v1.9.1
+	github.com/jinzhu/now v1.1.1 // indirect
 	github.com/jonboulle/clockwork v0.1.0 // indirect
 	github.com/json-iterator/go v1.1.7 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
@@ -35,6 +42,7 @@ require (
 	github.com/prometheus/common v0.6.0 // indirect
 	github.com/prometheus/procfs v0.0.3 // indirect
 	github.com/russellhaering/goxmldsig v0.0.0-20180430223755-7acd5e4a6ef7
+	github.com/satori/go.uuid v1.2.0
 	github.com/sirupsen/logrus v1.4.2
 	github.com/soheilhy/cmux v0.1.4 // indirect
 	github.com/spf13/cobra v0.0.5
@@ -53,7 +61,7 @@ require (
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	golang.org/x/tools v0.0.0-20190813214729-9dba7caff850 // indirect
 	google.golang.org/appengine v1.6.1 // indirect
-	google.golang.org/genproto v0.0.0-20190801165951-fa694d86fc64 // indirect
+	google.golang.org/genproto v0.0.0-20190801165951-fa694d86fc64
 	google.golang.org/grpc v1.23.0
 	gopkg.in/asn1-ber.v1 v1.0.0-20181015200546-f715ec2f112d // indirect
 	gopkg.in/ldap.v2 v2.5.1
