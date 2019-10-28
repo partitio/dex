@@ -67,6 +67,7 @@ func (c *ldapAggregatorConnector) Run() error {
 	s := grpc.NewServer(grpcOptions...)
 	RegisterLdapAggregatorServer(s, c)
 	go func() {
+		c.logger.Infof("ldap-aggregator: grpc api listening on %s", c.GRPC.Addr)
 		if err := s.Serve(list); err != nil {
 			c.logger.Error(err)
 		}

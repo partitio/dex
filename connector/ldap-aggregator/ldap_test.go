@@ -76,11 +76,11 @@ cn: john
 mail: johndoe@example.com
 userpassword: bar
 `
-	c := &Config{}
-	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
+	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
+	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
-	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
 
 	tests := []subtest{
@@ -150,11 +150,11 @@ sn: doe
 cn: john
 userpassword: bar
 `
-	c := &Config{}
-	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
+	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
+	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailSuffix = "test.example.com"
-	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
 
 	tests := []subtest{
@@ -233,11 +233,11 @@ cn: john
 mail: johndoe@example.com
 userpassword: bar
 `
-	c := &Config{}
-	c.UserSearch.BaseDN = "dc=example,dc=org"
+	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
+	c.UserSearch.BaseDn = "dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
-	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
 	c.UserSearch.Filter = "(ou:dn:=Seattle)"
 
@@ -326,13 +326,13 @@ objectClass: groupOfNames
 cn: developers
 member: cn=jane,ou=People,dc=example,dc=org
 `
-	c := &Config{}
-	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
+	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
+	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
-	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
-	c.GroupSearch.BaseDN = "ou=Groups,dc=example,dc=org"
+	c.GroupSearch.BaseDn = "ou=Groups,dc=example,dc=org"
 	c.GroupSearch.UserAttr = "DN"
 	c.GroupSearch.GroupAttr = "member"
 	c.GroupSearch.NameAttr = "cn"
@@ -425,13 +425,13 @@ objectClass: posixGroup
 cn: designers
 gidNumber: 1002
 `
-	c := &Config{}
-	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
+	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
+	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
-	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
-	c.GroupSearch.BaseDN = "ou=Groups,dc=example,dc=org"
+	c.GroupSearch.BaseDn = "ou=Groups,dc=example,dc=org"
 	c.GroupSearch.UserAttr = "departmentNumber"
 	c.GroupSearch.GroupAttr = "gidNumber"
 	c.GroupSearch.NameAttr = "cn"
@@ -528,13 +528,13 @@ objectClass: groupOfNames
 cn: developers
 member: cn=jane,ou=People,dc=example,dc=org
 `
-	c := &Config{}
-	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
+	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
+	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
-	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
-	c.GroupSearch.BaseDN = "dc=example,dc=org"
+	c.GroupSearch.BaseDn = "dc=example,dc=org"
 	c.GroupSearch.UserAttr = "DN"
 	c.GroupSearch.GroupAttr = "member"
 	c.GroupSearch.NameAttr = "cn"
@@ -592,11 +592,11 @@ cn: jane
 mail: janedoe@example.com
 userpassword: foo
 `
-	c := &Config{}
-	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
+	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
+	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
-	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
 
 	tests := []subtest{
@@ -635,11 +635,11 @@ cn: jane
 mail: janedoe@example.com
 userpassword: foo
 `
-	c := &Config{}
-	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
+	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
+	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
-	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
 
 	tests := []subtest{
@@ -678,11 +678,11 @@ cn: jane
 mail: janedoe@example.com
 userpassword: foo
 `
-	c := &Config{}
-	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
+	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
+	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
-	c.UserSearch.IDAttr = "DN"
+	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
 
 	tests := []subtest{
@@ -703,22 +703,22 @@ userpassword: foo
 
 func TestUsernamePrompt(t *testing.T) {
 	tests := map[string]struct {
-		config   Config
+		config   LdapConfig
 		expected string
 	}{
 		"with usernamePrompt unset it returns \"\"": {
-			config:   Config{},
+			config:   LdapConfig{},
 			expected: "",
 		},
 		"with usernamePrompt set it returns that": {
-			config:   Config{UsernamePrompt: "Email address"},
+			config:   LdapConfig{UsernamePrompt: "Email address"},
 			expected: "Email address",
 		},
 	}
 
 	for n, d := range tests {
 		t.Run(n, func(t *testing.T) {
-			conn := &ldapConnector{Config: d.config}
+			conn := &ldapConnector{LdapConfig: d.config}
 			if actual := conn.Prompt(); actual != d.expected {
 				t.Errorf("expected %v, got %v", d.expected, actual)
 			}
@@ -733,7 +733,7 @@ func TestUsernamePrompt(t *testing.T) {
 // machine's PATH.
 //
 // The DEX_LDAP_TESTS must be set to "1"
-func runTests(t *testing.T, schema string, connMethod connectionMethod, config *Config, tests []subtest) {
+func runTests(t *testing.T, schema string, connMethod connectionMethod, config *LdapConfig, tests []subtest) {
 	if os.Getenv(envVar) != "1" {
 		t.Skipf("%s not set. Skipping test (run 'export %s=1' to run tests)", envVar, envVar)
 	}
@@ -859,21 +859,21 @@ func runTests(t *testing.T, schema string, connMethod connectionMethod, config *
 	switch connMethod {
 	case connectStartTLS:
 		c.Host = "localhost:10389"
-		c.RootCA = "testdata/ca.crt"
-		c.StartTLS = true
+		c.RootCa = "testdata/ca.crt"
+		c.StartTls = true
 	case connectLDAPS:
 		c.Host = "localhost:10636"
-		c.RootCA = "testdata/ca.crt"
+		c.RootCa = "testdata/ca.crt"
 	case connectInsecureSkipVerify:
 		c.Host = "localhost:10636"
 		c.InsecureSkipVerify = true
 	case connectLDAP:
 		c.Host = "localhost:10389"
-		c.InsecureNoSSL = true
+		c.InsecureNoSsl = true
 	}
 
-	c.BindDN = "cn=admin,dc=example,dc=org"
-	c.BindPW = "admin"
+	c.BindDn = "cn=admin,dc=example,dc=org"
+	c.BindPw = "admin"
 
 	l := &logrus.Logger{Out: ioutil.Discard, Formatter: &logrus.TextFormatter{}}
 

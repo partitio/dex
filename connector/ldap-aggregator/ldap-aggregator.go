@@ -68,9 +68,11 @@ import (
 //           nameAttr: name
 //
 type Config struct {
-	GRPC    *GRPC           `json:"grpc"`
-	DB      *PostgresConfig `json:"db"`
-	Servers []*LdapConfig   `json:"servers"`
+	GRPC *GRPC           `json:"grpc"`
+	DB   *PostgresConfig `json:"db"`
+	// PassPhrase is used to encrypt ldap's BindPW
+	PassPhrase string        `json:"passPhrase"`
+	Servers    []*LdapConfig `json:"servers"`
 	// UsernamePrompt allows users to override the username attribute (displayed
 	// in the username/password prompt). If unset, the handler will use
 	// "Username".
@@ -111,8 +113,15 @@ func (c *Config) OpenConnector(logger log.Logger) (interface {
 func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, error) {
 	var db *gorm.DB
 	var err error
-	var ss []*LdapConfig
 	if c.ApiEnabled() {
+		if c.PassPhrase == "" {
+			return nil, errors.New("PassPhrase cannot be empty when api is enabled")
+		}
+		// Initialize Password Crypto
+		crypto, err = NewCrypto(c.PassPhrase)
+		if err != nil {
+			return nil, err
+		}
 		db, err = c.openGormDB()
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to database: %v", err)
@@ -120,17 +129,19 @@ func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, err
 		if err := db.AutoMigrate(&LdapConfigORM{}, &GroupSearchORM{}, &UserSearchORM{}).Error; err != nil {
 			return nil, fmt.Errorf("failed to migrate database: %v", err)
 		}
+		db = db.Set("gorm:auto_preload", true)
 		// Check if db contains ldap servers
-		ss, err = DefaultListLdapConfig(context.Background(), db)
+		ss, err := DefaultListLdapConfig(context.Background(), db)
 		if err != nil {
 			return nil, err
 		}
+		// Append servers from config file after db servers as db take precedence over config file
+		c.Servers = append(ss, c.Servers...)
 	}
-	// Append servers from config file after db servers as db take precedence over config file
-	c.Servers = append(ss, c.Servers...)
 	var ldapServers []*ldapServer
 	for i, ldapConfig := range c.Servers {
 		if i > 0 && contains(c.Servers[:i], ldapConfig) {
+			logger.Infof("skipping %s as it is present in database", ldapConfig.Host)
 			continue
 		}
 		conn, err := ldapConfig.OpenConnector(logger)

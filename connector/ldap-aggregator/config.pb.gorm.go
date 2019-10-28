@@ -42,7 +42,7 @@ var _ = math.Inf
 
 type LdapConfigORM struct {
 	BindDn             string
-	BindPw             string `gorm:"type:text"`
+	BindPw             []byte
 	ClientCert         string
 	ClientKey          string
 	GroupSearch        *GroupSearchORM `gorm:"foreignkey:GroupSearchId;association_foreignkey:Id"`
@@ -84,7 +84,6 @@ func (m *LdapConfig) ToORM(ctx context.Context) (LdapConfigORM, error) {
 	to.ClientKey = m.ClientKey
 	to.RootCaData = m.RootCaData
 	to.BindDn = m.BindDn
-	to.BindPw = m.BindPw
 	to.UsernamePrompt = m.UsernamePrompt
 	if m.UserSearch != nil {
 		tempUserSearch, err := m.UserSearch.ToORM(ctx)
@@ -126,7 +125,6 @@ func (m *LdapConfigORM) ToPB(ctx context.Context) (LdapConfig, error) {
 	to.ClientKey = m.ClientKey
 	to.RootCaData = m.RootCaData
 	to.BindDn = m.BindDn
-	to.BindPw = m.BindPw
 	to.UsernamePrompt = m.UsernamePrompt
 	if m.UserSearch != nil {
 		tempUserSearch, err := m.UserSearch.ToPB(ctx)

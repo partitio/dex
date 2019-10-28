@@ -9,7 +9,12 @@ import "github.com/infobloxopen/protoc-gen-gorm/options/gorm.proto";
 
 
 message LdapConfig {
-    option (gorm.opts).ormable = true;
+    option(gorm.opts) = {
+      ormable: true,
+      include: [
+        {type: "[]byte", name: "BindPw"}
+      ]
+    };
     // The id is the host ...
     string id = 14;
     // The host and optional port of the LDAP server. If port isn't supplied, it will be
@@ -42,7 +47,7 @@ message LdapConfig {
     // BindDN and BindPW for an application service account. The connector uses these
     // credentials to search for users and groups.
     string bind_dn = 9;
-    string bind_pw = 10 [(gorm.field).tag = {type: "text"}];
+    string bind_pw = 10 [(gorm.field).drop = true];
 
     // UsernamePrompt allows users to override the username attribute (displayed
     // in the username/password prompt). If unset, the handler will use
