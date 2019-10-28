@@ -1,7 +1,6 @@
-package main
+package dex
 
 import (
-	"github.com/dexidp/dex/server"
 	"testing"
 
 	"github.com/ghodss/yaml"
@@ -9,11 +8,85 @@ import (
 
 	"github.com/dexidp/dex/connector/mock"
 	"github.com/dexidp/dex/connector/oidc"
+	"github.com/dexidp/dex/server"
 	"github.com/dexidp/dex/storage"
 	"github.com/dexidp/dex/storage/sql"
 )
 
 var _ = yaml.YAMLToJSON
+
+var testConfig = Config{
+	Issuer: "http://127.0.0.1:5556/dex",
+	Storage: Storage{
+		Type: "postgres",
+		Config: &sql.Postgres{
+			NetworkDB: sql.NetworkDB{
+				Host:              "10.0.0.1",
+				Port:              65432,
+				MaxOpenConns:      5,
+				MaxIdleConns:      3,
+				ConnMaxLifetime:   30,
+				ConnectionTimeout: 3,
+			},
+		},
+	},
+	Web: Web{
+		HTTP: "127.0.0.1:5556",
+	},
+	StaticClients: []storage.Client{
+		{
+			ID:     "example-app",
+			Secret: "ZXhhbXBsZS1hcHAtc2VjcmV0",
+			Name:   "Example App",
+			RedirectURIs: []string{
+				"http://127.0.0.1:5555/callback",
+			},
+		},
+	},
+	StaticConnectors: []Connector{
+		{
+			Type:   "mockCallback",
+			ID:     "mock",
+			Name:   "Example",
+			Config: &mock.CallbackConfig{},
+		},
+		{
+			Type: "oidc",
+			ID:   "google",
+			Name: "Google",
+			Config: &oidc.Config{
+				Issuer:       "https://accounts.google.com",
+				ClientID:     "foo",
+				ClientSecret: "ba$r",
+				RedirectURI:  "http://127.0.0.1:5556/dex/callback/google",
+			},
+		},
+	},
+	EnablePasswordDB: true,
+	StaticPasswords: []password{
+		{
+			Email:    "admin@example.com",
+			Hash:     []byte("$2a$10$33EMT0cVYVlPy6WAMCLsceLYjWhuHpbz5yuZxu/GAFj03J9Lytjuy"),
+			Username: "admin",
+			UserID:   "08a8684b-db88-4b73-90a9-3cd1661f5466",
+		},
+		{
+			Email:    "foo@example.com",
+			Hash:     []byte("$2a$10$33EMT0cVYVlPy6WAMCLsceLYjWhuHpbz5yuZxu/GAFj03J9Lytjuy"),
+			Username: "foo",
+			UserID:   "41331323-6f44-45e6-b3b9-2c4b60c02be5",
+		},
+	},
+	Expiry: Expiry{
+		SigningKeys:  "7h",
+		IDTokens:     "25h",
+		AuthRequests: "25h",
+	},
+	Logger: Logger{
+		Level:  "debug",
+		Format: "json",
+	},
+}
 
 func TestValidConfiguration(t *testing.T) {
 	configuration := Config{

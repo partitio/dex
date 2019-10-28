@@ -1,4 +1,4 @@
-package main
+package dex
 
 import (
 	"encoding/base64"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"syscall"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -192,7 +193,7 @@ func (s *Storage) UnmarshalJSON(b []byte) error {
 
 	storageConfig := f()
 	if len(store.Config) != 0 {
-		data := []byte(os.ExpandEnv(string(store.Config)))
+		data := []byte(ExpandEnv(string(store.Config)))
 		if err := json.Unmarshal(data, storageConfig); err != nil {
 			return fmt.Errorf("parse storage config: %v", err)
 		}
@@ -234,7 +235,7 @@ func (c *Connector) UnmarshalJSON(b []byte) error {
 
 	connConfig := f()
 	if len(conn.Config) != 0 {
-		data := []byte(os.ExpandEnv(string(conn.Config)))
+		data := []byte(ExpandEnv(string(conn.Config)))
 		if err := json.Unmarshal(data, connConfig); err != nil {
 			return fmt.Errorf("parse connector config: %v", err)
 		}
@@ -282,4 +283,14 @@ type Logger struct {
 
 	// Format specifies the format to be used for logging.
 	Format string `json:"format"`
+}
+
+func ExpandEnv(s string) string {
+	return os.Expand(s, func(key string) string {
+		if key == "$" {
+			return "$"
+		}
+		v, _ := syscall.Getenv(key)
+		return v
+	})
 }
