@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package ldap_aggregator;
+
+option go_package = "ldapaggregator";
+
+import "protoc-gen-gorm/options/gorm.proto";
+import "protoc-gen-validate/validate/validate.proto";
+import "config.proto";
+
+
+service LdapAggregator {
+    option (gorm.server).autogen = true;
+    rpc List(ListRequest) returns (ListResponse);
+    rpc Create (CreateRequest) returns (CreateResponse);
+    rpc Read (ReadRequest) returns (ReadResponse);
+    rpc Update(UpdateRequest) returns (UpdateResponse);
+    rpc Delete(DeleteRequest) returns (DeleteResponse){
+        option (gorm.method).object_type = "LdapConfig";
+    };
+}
+
+message ListRequest {
+
+}
+
+message ListResponse {
+    repeated LdapConfig results = 1;
+}
+
+message CreateRequest {
+    LdapConfig payload = 1 [(validate.rules).message.required = true];
+}
+
+message CreateResponse {
+    LdapConfig result = 1;
+    bool already_exists = 2;
+}
+
+message ReadRequest {
+    string id = 1;
+}
+
+message ReadResponse {
+    LdapConfig result = 1;
+    bool not_found = 2;
+}
+
+message UpdateRequest {
+    LdapConfig payload = 1 [(validate.rules).message.required = true];
+}
+
+message UpdateResponse {
+    LdapConfig result = 1;
+    bool not_found = 2;
+}
+
+message DeleteRequest {
+    string id = 1;
+}
+
+message DeleteResponse {
+    bool not_found = 1;
+}

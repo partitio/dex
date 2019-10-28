@@ -1,0 +1,57 @@
+issuer: http://127.0.0.1:5556/dex
+storage:
+  type: sqlite3
+  config:
+    file: examples/dex.db
+web:
+  http: 127.0.0.1:5556
+
+connectors:
+- type: ldap-aggregator
+  name: ldap-aggregator
+  id: ldap-aggregator
+  config:
+    # if not set server is disabled
+    grpc:
+      addr: 127.0.0.1:5559
+      tlsCert: connector/ldap-aggregator/testdata/server.crt
+      tlsKey: connector/ldap-aggregator/testdata/server.key
+      tlsClientCA: connector/ldap-aggregator/testdata/client.crt
+    passPhrase: securityFirst!
+    # SQLite can be used as db engine
+    sqlite: ":memory:"#./connector/ldap-aggregator/testdata/ldap-aggregator.db
+    # Postgres will overide any SQLite configuration
+    servers:
+    - host: 127.0.0.1:1636
+      # The following field is required if using port 389.
+      # insecureNoSSL: true
+      insecureSkipVerify: true
+      rootCA: ./connector/ldap-aggregator/testdata/ldap-1/ca.pem
+      bindDN: cn=administrator,cn=users,dc=example,dc=com
+      bindPW: Passw1rd!
+      userSearch:
+        # Would translate to the query "(&(objectClass=person)(uid=<sAMAccountName>))"
+        baseDN: cn=users,dc=example,dc=com
+        filter: "(objectClass=user)"
+        username: sAMAccountName
+        idAttr: objectGUID
+        emailAttr: mail
+        nameAttr: cn
+        emailSuffix: example.com
+      groupSearch:
+        # Would translate to the query "(&(objectClass=group)(member=<user uid>))"
+        baseDN: cn=groups,dc=example,dc=com
+        filter: "(objectClass=group)"
+        userAttr: DN
+          # Use if full DN is needed and not available as any other attribute
+          # Will only work if "DN" attribute does not exist in the record
+        # userAttr: DN
+        groupAttr: member
+        nameAttr: cn
+
+staticClients:
+- id: example-app
+  redirectURIs:
+  - 'http://127.0.0.1:5555/callback'
+  name: 'Example App'
+  secret: ZXhhbXBsZS1hcHAtc2VjcmV0

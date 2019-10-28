@@ -8,12 +8,10 @@ VERSION ?= $(shell ./scripts/git-version)
 DOCKER_REPO=quay.io/dexidp/dex
 DOCKER_IMAGE=$(DOCKER_REPO):$(VERSION)
 
-$( shell mkdir -p bin )
-
 user=$(shell id -u -n)
 group=$(shell id -g -n)
-
 export GOBIN=$(PWD)/bin
+
 
 LD_FLAGS="-w -X $(REPO_PATH)/version.Version=$(VERSION)"
 
@@ -89,25 +87,46 @@ fix: bin/golangci-lint ## Fix lint violations
 docker-image:
 	@sudo docker build -t $(DOCKER_IMAGE) .
 
+LDAP_AGGREGATOR_PROTOS := ./connector/ldap-aggregator
 .PHONY: proto
-proto: bin/protoc bin/protoc-gen-go
+proto: bin/protoc bin/protoc-gen-go bin/protoc-gen-validate bin/protoc-gen-gorm
 	@./bin/protoc --go_out=plugins=grpc:. --plugin=protoc-gen-go=./bin/protoc-gen-go api/v2/*.proto
 	@cp api/v2/*.proto api/
 	@./bin/protoc --go_out=plugins=grpc:. --plugin=protoc-gen-go=./bin/protoc-gen-go api/*.proto
 	@./bin/protoc --go_out=. --plugin=protoc-gen-go=./bin/protoc-gen-go server/internal/*.proto
+	@./bin/protoc -I./include -I$(LDAP_AGGREGATOR_PROTOS) \
+		-I$(LDAP_AGGREGATOR_PROTOS)/3rdparty \
+		--plugin=protoc-gen-go=./bin/protoc-gen-go \
+		--plugin=protoc-gen-validate=./bin/protoc-gen-validate \
+		--plugin=protoc-gen-gorm=./bin/protoc-gen-gorm \
+		--go_out=plugins=grpc:$(LDAP_AGGREGATOR_PROTOS) \
+		--gorm_out=$(LDAP_AGGREGATOR_PROTOS) \
+		--validate_out="lang=go:$(LDAP_AGGREGATOR_PROTOS)" \
+		$(LDAP_AGGREGATOR_PROTOS)/*.proto
 
 .PHONY: verify-proto
 verify-proto: proto
 	@./scripts/git-diff
 
-bin/protoc: scripts/get-protoc
-	@./scripts/get-protoc bin/protoc
+bin:
+	@mkdir -p bin
+
+bin/protoc: bin scripts/get-protoc
+	@./scripts/get-protoc bin/protoc .
+
+bin/protoc-gen-gorm: bin
+	@mkdir -p tmp
+	@cd tmp && go mod init dummy && go get -v github.com/partitio/protoc-gen-gorm@grpc-micro && go install -v github.com/partitio/protoc-gen-gorm
+	@rm -rf tmp
+
+bin/protoc-gen-validate: bin
+	@go install -v github.com/envoyproxy/protoc-gen-validate
 
 bin/protoc-gen-go:
 	@go install -v github.com/golang/protobuf/protoc-gen-go
 
 clean:
-	@rm -rf bin/
+	@rm -rf bin/ include/
 
 testall: testrace
 
