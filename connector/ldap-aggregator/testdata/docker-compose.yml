@@ -1,0 +1,48 @@
+version: '3'
+
+services:
+  ldap-1:
+    image: adphi/samba-ad
+    dns:
+    - 127.0.0.1
+    dns_search:
+    - example.com
+    cap_add:
+      - SYS_ADMIN
+    hostname: DC01
+    environment:
+      SAMBA_DC_DOMAIN: TEST
+      SAMBA_DC_REALM: example.com
+      SAMBA_DC_ADMIN_PASSWORD: Passw1rd!
+    ports:
+    - 1636:636
+  ldap-2:
+    image: adphi/samba-ad
+    dns:
+    - 127.0.0.1
+    dns_search:
+    - example.net
+    cap_add:
+    - SYS_ADMIN
+    hostname: DC01
+    environment:
+      SAMBA_DC_DOMAIN: TEST
+      SAMBA_DC_REALM: example.net
+      SAMBA_DC_ADMIN_PASSWORD: Passw2rd!
+    ports:
+    - 2636:636
+  ldap-3:
+    image: adphi/samba-ad
+    dns:
+    - 127.0.0.1
+    dns_search:
+    - example.org
+    cap_add:
+    - SYS_ADMIN
+    hostname: DC01
+    environment:
+      SAMBA_DC_DOMAIN: TEST
+      SAMBA_DC_REALM: example.org
+      SAMBA_DC_ADMIN_PASSWORD: Passw3rd!
+    ports:
+    - 3636:636
