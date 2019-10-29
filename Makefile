@@ -9,24 +9,25 @@ VERSION ?= $(shell ./scripts/git-version)
 DOCKER_REPO=quay.io/dexidp/dex
 DOCKER_IMAGE=$(DOCKER_REPO):$(VERSION)
 
-$( shell mkdir -p bin )
-
 user=$(shell id -u -n)
 group=$(shell id -g -n)
-
 export GOBIN=$(PWD)/bin
+
 
 LD_FLAGS="-w -X $(REPO_PATH)/version.Version=$(VERSION)"
 
 build: bin/dex bin/example-app bin/grpc-client
 
-bin/dex:
+bin:
+	@mkdir -p bin
+
+bin/dex: bin
 	@go install -v -ldflags $(LD_FLAGS) $(REPO_PATH)/cmd/dex
 
-bin/example-app:
+bin/example-app: bin
 	@go install -v -ldflags $(LD_FLAGS) $(REPO_PATH)/cmd/example-app
 
-bin/grpc-client:
+bin/grpc-client: bin
 	@go install -v -ldflags $(LD_FLAGS) $(REPO_PATH)/examples/grpc-client
 
 .PHONY: release-binary
@@ -77,19 +78,19 @@ proto: bin/protoc bin/protoc-gen-go bin/protoc-gen-validate bin/protoc-gen-gorm
 verify-proto: proto
 	@./scripts/git-diff
 
-bin/protoc: scripts/get-protoc
+bin/protoc: bin scripts/get-protoc
 	@./scripts/get-protoc bin/protoc .
 
-bin/protoc-gen-gorm:
+bin/protoc-gen-gorm: bin
 	@go install -v $(THIS_DIRECTORY)/vendor/github.com/infobloxopen/protoc-gen-gorm
 
-bin/protoc-gen-validate:
+bin/protoc-gen-validate: bin
 	@go install -v $(THIS_DIRECTORY)/vendor/github.com/envoyproxy/protoc-gen-validate
 
-bin/protoc-gen-go:
+bin/protoc-gen-go: bin
 	@go install -v $(REPO_PATH)/vendor/github.com/golang/protobuf/protoc-gen-go
 
-bin/golint:
+bin/golint: bin
 	@go install -v $(THIS_DIRECTORY)/vendor/golang.org/x/lint/golint
 
 clean:
