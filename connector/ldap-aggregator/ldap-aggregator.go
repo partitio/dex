@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	"google.golang.org/grpc"
 	"gopkg.in/ldap.v2"
 
 	"github.com/dexidp/dex/connector"
@@ -31,7 +34,10 @@ import (
 //         tlsCert: examples/grpc-client/server.crt
 //         tlsKey: examples/grpc-client/server.key
 //         tlsClientCA: /etc/dex/client.crt
-//       db:
+// 		 # SQLite can be used as db engine
+//       sqlite: ./ldap-aggregator.db
+// 		 # Postgres will overide any SQLite configuration
+//       postgres:
 //	       host: postgres
 //	       port: 5432
 //	       ssl: false
@@ -68,8 +74,9 @@ import (
 //           nameAttr: name
 //
 type Config struct {
-	GRPC *GRPC           `json:"grpc"`
-	DB   *PostgresConfig `json:"db"`
+	GRPC     *GRPC           `json:"grpc"`
+	Postgres *PostgresConfig `json:"postgres"`
+	Sqlite   string          `json:"sqlite"`
 	// PassPhrase is used to encrypt ldap's BindPW
 	PassPhrase string        `json:"passPhrase"`
 	Servers    []*LdapConfig `json:"servers"`
@@ -106,6 +113,7 @@ func (c *Config) OpenConnector(logger log.Logger) (interface {
 	connector.Connector
 	connector.PasswordConnector
 	connector.RefreshConnector
+	io.Closer
 }, error) {
 	return c.openConnector(logger)
 }
@@ -113,6 +121,9 @@ func (c *Config) OpenConnector(logger log.Logger) (interface {
 func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, error) {
 	var db *gorm.DB
 	var err error
+	if !c.ApiEnabled() && len(c.Servers) == 0 {
+		return nil, errors.New("servers cannot be empty when api is not enabled")
+	}
 	if c.ApiEnabled() {
 		if c.PassPhrase == "" {
 			return nil, errors.New("PassPhrase cannot be empty when api is enabled")
@@ -126,7 +137,7 @@ func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, err
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to database: %v", err)
 		}
-		if err := db.AutoMigrate(&LdapConfigORM{}, &GroupSearchORM{}, &UserSearchORM{}).Error; err != nil {
+		if err := db.AutoMigrate(&LdapConfigORM{}).Error; err != nil {
 			return nil, fmt.Errorf("failed to migrate database: %v", err)
 		}
 		db = db.Set("gorm:auto_preload", true)
@@ -140,6 +151,9 @@ func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, err
 	}
 	var ldapServers []*ldapServer
 	for i, ldapConfig := range c.Servers {
+		if err := ldapConfig.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid configuration for %s : %v", ldapConfig.Host, err)
+		}
 		if i > 0 && contains(c.Servers[:i], ldapConfig) {
 			logger.Infof("skipping %s as it is present in database", ldapConfig.Host)
 			continue
@@ -152,7 +166,7 @@ func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, err
 		ldapConfig.Id = ldapConfig.Host
 		if c.ApiEnabled() {
 			if _, err := DefaultStrictUpdateLdapConfig(context.Background(), ldapConfig, db); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("falied to save %s in db: %v", ldapConfig.Host, err)
 			}
 		}
 		ldapServers = append(ldapServers, &ldapServer{*ldapConfig, conn})
@@ -163,20 +177,30 @@ func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, err
 }
 
 func (c *Config) openGormDB() (*gorm.DB, error) {
-	if c.DB == nil {
+	if c.Postgres == nil {
+		if c.Sqlite != "" {
+			return gorm.Open("sqlite3", c.Sqlite)
+		}
 		return nil, errors.New("ldap-aggregator: no db config")
 	}
 	dbPath := fmt.Sprintf("user=%s password=%s host=%s port=%d dbname=%s",
-		c.DB.Username,
-		c.DB.Password,
-		c.DB.Host,
-		c.DB.Port,
-		c.DB.Database,
+		c.Postgres.Username,
+		c.Postgres.Password,
+		c.Postgres.Host,
+		c.Postgres.Port,
+		c.Postgres.Database,
 	)
-	if !c.DB.SSL {
+	if !c.Postgres.SSL {
 		dbPath += " sslmode=disable"
 	}
 	return gorm.Open("postgres", dbPath)
+}
+
+func (c *ldapAggregatorConnector) Close() error {
+	if c.grpc != nil {
+		c.grpc.GracefulStop()
+	}
+	return c.DB.Close()
 }
 
 type ldapServer struct {
@@ -193,6 +217,7 @@ type ldapAggregatorConnector struct {
 	ldapConnectors []*ldapServer
 	logger         log.Logger
 	m              sync.RWMutex
+	grpc           *grpc.Server
 	*LdapAggregatorDefaultServer
 }
 

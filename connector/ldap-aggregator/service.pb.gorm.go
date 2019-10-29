@@ -9,6 +9,7 @@ import gorm1 "github.com/jinzhu/gorm"
 
 import fmt "fmt"
 import math "math"
+import _ "github.com/envoyproxy/protoc-gen-validate/validate"
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = fmt.Errorf

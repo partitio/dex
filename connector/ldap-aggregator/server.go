@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net"
 
+	grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -27,7 +28,7 @@ func (c *ldapAggregatorConnector) Run() error {
 		c.logger.Info("Ldap Aggregator API disabled")
 		return nil
 	}
-	var grpcOptions []grpc.ServerOption
+	grpcOptions := []grpc.ServerOption{grpc.UnaryInterceptor(grpc_validator.UnaryServerInterceptor())}
 
 	if c.GRPC.TLSCert != "" {
 		// Parse certificates from certificate file and key file for server.
@@ -64,11 +65,12 @@ func (c *ldapAggregatorConnector) Run() error {
 	if err != nil {
 		return fmt.Errorf("listening on %s failed: %v", c.GRPC.Addr, err)
 	}
-	s := grpc.NewServer(grpcOptions...)
-	RegisterLdapAggregatorServer(s, c)
+	c.grpc = grpc.NewServer(grpcOptions...)
+	RegisterLdapAggregatorServer(c.grpc, c)
 	go func() {
 		c.logger.Infof("ldap-aggregator: grpc api listening on %s", c.GRPC.Addr)
-		if err := s.Serve(list); err != nil {
+		defer list.Close()
+		if err := c.grpc.Serve(list); err != nil {
 			c.logger.Error(err)
 		}
 	}()
@@ -77,13 +79,13 @@ func (c *ldapAggregatorConnector) Run() error {
 
 func (c *ldapAggregatorConnector) List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 	c.m.RLock()
-	defer c.m.Unlock()
+	defer c.m.RUnlock()
 	res, err := c.LdapAggregatorDefaultServer.List(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	for k, v := range res.Results {
-		v.BindPw = ""
+		v.BindPW = ""
 		res.Results[k] = v
 	}
 	return res, nil
@@ -104,18 +106,18 @@ func (c *ldapAggregatorConnector) Create(ctx context.Context, req *CreateRequest
 	if err != nil {
 		return nil, err
 	}
-	res.Result.BindPw = ""
+	res.Result.BindPW = ""
 	return res, nil
 }
 
 func (c *ldapAggregatorConnector) Read(ctx context.Context, req *ReadRequest) (*ReadResponse, error) {
 	c.m.RLock()
-	defer c.m.Unlock()
+	defer c.m.RUnlock()
 	res, err := c.LdapAggregatorDefaultServer.Read(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	res.Result.BindPw = ""
+	res.Result.BindPW = ""
 	return res, nil
 }
 
@@ -144,7 +146,7 @@ func (c *ldapAggregatorConnector) Update(ctx context.Context, req *UpdateRequest
 	if err != nil {
 		return nil, err
 	}
-	res.Result.BindPw = ""
+	res.Result.BindPW = ""
 	return res, nil
 }
 

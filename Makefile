@@ -60,13 +60,17 @@ docker-image:
 
 LDAP_AGGREGATOR_PROTOS := ./connector/ldap-aggregator
 .PHONY: proto
-proto: bin/protoc bin/protoc-gen-go bin/protoc-gen-gorm
+proto: bin/protoc bin/protoc-gen-go bin/protoc-gen-validate bin/protoc-gen-gorm
 	@./bin/protoc --go_out=plugins=grpc:. --plugin=protoc-gen-go=./bin/protoc-gen-go api/*.proto
 	@./bin/protoc --go_out=. --plugin=protoc-gen-go=./bin/protoc-gen-go server/internal/*.proto
-	@./bin/protoc -I./vendor -I/usr/local/include -I$(LDAP_AGGREGATOR_PROTOS) \
+	@./bin/protoc -I./vendor -I./include -I$(LDAP_AGGREGATOR_PROTOS) \
+		-I./vendor/github.com/envoyproxy/protoc-gen-validate \
+		--plugin=protoc-gen-go=./bin/protoc-gen-go \
+		--plugin=protoc-gen-validate=./bin/protoc-gen-validate \
+		--plugin=protoc-gen-gorm=./bin/protoc-gen-gorm \
 		--go_out=plugins=grpc:$(LDAP_AGGREGATOR_PROTOS) \
 		--gorm_out=$(LDAP_AGGREGATOR_PROTOS) \
-		--plugin=protoc-gen-go=./bin/protoc-gen-go \
+		--validate_out="lang=go:$(LDAP_AGGREGATOR_PROTOS)" \
 		$(LDAP_AGGREGATOR_PROTOS)/*.proto
 
 .PHONY: verify-proto
@@ -74,10 +78,13 @@ verify-proto: proto
 	@./scripts/git-diff
 
 bin/protoc: scripts/get-protoc
-	@./scripts/get-protoc bin/protoc
+	@./scripts/get-protoc bin/protoc .
 
 bin/protoc-gen-gorm:
-	# @go install -v $(THIS_DIRECTORY)/vendor/github.com/infobloxopen/protoc-gen-gorm
+	@go install -v $(THIS_DIRECTORY)/vendor/github.com/infobloxopen/protoc-gen-gorm
+
+bin/protoc-gen-validate:
+	@go install -v $(THIS_DIRECTORY)/vendor/github.com/envoyproxy/protoc-gen-validate
 
 bin/protoc-gen-go:
 	@go install -v $(REPO_PATH)/vendor/github.com/golang/protobuf/protoc-gen-go

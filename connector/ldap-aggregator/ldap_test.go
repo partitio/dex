@@ -77,7 +77,7 @@ mail: johndoe@example.com
 userpassword: bar
 `
 	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
-	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
+	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
 	c.UserSearch.IdAttr = "DN"
@@ -151,7 +151,7 @@ cn: john
 userpassword: bar
 `
 	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
-	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
+	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailSuffix = "test.example.com"
 	c.UserSearch.IdAttr = "DN"
@@ -234,7 +234,7 @@ mail: johndoe@example.com
 userpassword: bar
 `
 	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
-	c.UserSearch.BaseDn = "dc=example,dc=org"
+	c.UserSearch.BaseDN = "dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
 	c.UserSearch.IdAttr = "DN"
@@ -327,12 +327,12 @@ cn: developers
 member: cn=jane,ou=People,dc=example,dc=org
 `
 	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
-	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
+	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
 	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
-	c.GroupSearch.BaseDn = "ou=Groups,dc=example,dc=org"
+	c.GroupSearch.BaseDN = "ou=Groups,dc=example,dc=org"
 	c.GroupSearch.UserAttr = "DN"
 	c.GroupSearch.GroupAttr = "member"
 	c.GroupSearch.NameAttr = "cn"
@@ -426,12 +426,12 @@ cn: designers
 gidNumber: 1002
 `
 	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
-	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
+	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
 	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
-	c.GroupSearch.BaseDn = "ou=Groups,dc=example,dc=org"
+	c.GroupSearch.BaseDN = "ou=Groups,dc=example,dc=org"
 	c.GroupSearch.UserAttr = "departmentNumber"
 	c.GroupSearch.GroupAttr = "gidNumber"
 	c.GroupSearch.NameAttr = "cn"
@@ -529,12 +529,12 @@ cn: developers
 member: cn=jane,ou=People,dc=example,dc=org
 `
 	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
-	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
+	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
 	c.UserSearch.IdAttr = "DN"
 	c.UserSearch.Username = "cn"
-	c.GroupSearch.BaseDn = "dc=example,dc=org"
+	c.GroupSearch.BaseDN = "dc=example,dc=org"
 	c.GroupSearch.UserAttr = "DN"
 	c.GroupSearch.GroupAttr = "member"
 	c.GroupSearch.NameAttr = "cn"
@@ -593,7 +593,7 @@ mail: janedoe@example.com
 userpassword: foo
 `
 	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
-	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
+	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
 	c.UserSearch.IdAttr = "DN"
@@ -636,7 +636,7 @@ mail: janedoe@example.com
 userpassword: foo
 `
 	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
-	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
+	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
 	c.UserSearch.IdAttr = "DN"
@@ -679,7 +679,7 @@ mail: janedoe@example.com
 userpassword: foo
 `
 	c := &LdapConfig{UserSearch: &UserSearch{}, GroupSearch: &GroupSearch{}}
-	c.UserSearch.BaseDn = "ou=People,dc=example,dc=org"
+	c.UserSearch.BaseDN = "ou=People,dc=example,dc=org"
 	c.UserSearch.NameAttr = "cn"
 	c.UserSearch.EmailAttr = "mail"
 	c.UserSearch.IdAttr = "DN"
@@ -859,21 +859,21 @@ func runTests(t *testing.T, schema string, connMethod connectionMethod, config *
 	switch connMethod {
 	case connectStartTLS:
 		c.Host = "localhost:10389"
-		c.RootCa = "testdata/ca.crt"
-		c.StartTls = true
+		c.RootCA = "testdata/ca.crt"
+		c.StartTLS = true
 	case connectLDAPS:
 		c.Host = "localhost:10636"
-		c.RootCa = "testdata/ca.crt"
+		c.RootCA = "testdata/ca.crt"
 	case connectInsecureSkipVerify:
 		c.Host = "localhost:10636"
 		c.InsecureSkipVerify = true
 	case connectLDAP:
 		c.Host = "localhost:10389"
-		c.InsecureNoSsl = true
+		c.InsecureNoSSL = true
 	}
 
-	c.BindDn = "cn=admin,dc=example,dc=org"
-	c.BindPw = "admin"
+	c.BindDN = "cn=admin,dc=example,dc=org"
+	c.BindPW = "admin"
 
 	l := &logrus.Logger{Out: ioutil.Discard, Formatter: &logrus.TextFormatter{}}
 

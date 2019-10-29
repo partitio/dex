@@ -101,7 +101,7 @@ func (c *LdapConfig) openConnector(logger log.Logger) (*ldapConnector, error) {
 		val  string
 	}{
 		{"host", c.Host},
-		{"userSearch.baseDN", c.UserSearch.BaseDn},
+		{"userSearch.baseDN", c.UserSearch.BaseDN},
 		{"userSearch.username", c.UserSearch.Username},
 	}
 
@@ -117,7 +117,7 @@ func (c *LdapConfig) openConnector(logger log.Logger) (*ldapConnector, error) {
 	)
 	if host, _, err = net.SplitHostPort(c.Host); err != nil {
 		host = c.Host
-		if c.InsecureNoSsl {
+		if c.InsecureNoSSL {
 			c.Host = c.Host + ":389"
 		} else {
 			c.Host = c.Host + ":636"
@@ -125,11 +125,11 @@ func (c *LdapConfig) openConnector(logger log.Logger) (*ldapConnector, error) {
 	}
 
 	tlsConfig := &tls.Config{ServerName: host, InsecureSkipVerify: c.InsecureSkipVerify}
-	if c.RootCa != "" || len(c.RootCaData) != 0 {
-		data := c.RootCaData
+	if c.RootCA != "" || len(c.RootCAData) != 0 {
+		data := c.RootCAData
 		if len(data) == 0 {
 			var err error
-			if data, err = ioutil.ReadFile(c.RootCa); err != nil {
+			if data, err = ioutil.ReadFile(c.RootCA); err != nil {
 				return nil, fmt.Errorf("ldap: read ca file: %v", err)
 			}
 		}
@@ -184,9 +184,9 @@ func (c *ldapConnector) do(ctx context.Context, f func(c *ldap.Conn) error) erro
 		err  error
 	)
 	switch {
-	case c.InsecureNoSsl:
+	case c.InsecureNoSSL:
 		conn, err = ldap.Dial("tcp", c.Host)
-	case c.StartTls:
+	case c.StartTLS:
 		conn, err = ldap.Dial("tcp", c.Host)
 		if err != nil {
 			return fmt.Errorf("failed to connect: %v", err)
@@ -203,11 +203,11 @@ func (c *ldapConnector) do(ctx context.Context, f func(c *ldap.Conn) error) erro
 	defer conn.Close()
 
 	// If bindDN and bindPW are empty this will default to an anonymous bind.
-	if err := conn.Bind(c.BindDn, c.BindPw); err != nil {
-		if c.BindDn == "" && c.BindPw == "" {
+	if err := conn.Bind(c.BindDN, c.BindPW); err != nil {
+		if c.BindDN == "" && c.BindPW == "" {
 			return fmt.Errorf("ldap: initial anonymous bind failed: %v", err)
 		}
-		return fmt.Errorf("ldap: initial bind for user %q failed: %v", c.BindDn, err)
+		return fmt.Errorf("ldap: initial bind for user %q failed: %v", c.BindDN, err)
 	}
 
 	return f(conn)
@@ -265,7 +265,6 @@ func (c *ldapConnector) identityFromEntry(user ldap.Entry) (ident connector.Iden
 }
 
 func (c *ldapConnector) userEntry(conn *ldap.Conn, username string) (user ldap.Entry, found bool, err error) {
-
 	filter := fmt.Sprintf("(%s=%s)", c.UserSearch.Username, ldap.EscapeFilter(username))
 	if c.UserSearch.Filter != "" {
 		filter = fmt.Sprintf("(&%s%s)", c.UserSearch.Filter, filter)
@@ -273,7 +272,7 @@ func (c *ldapConnector) userEntry(conn *ldap.Conn, username string) (user ldap.E
 
 	// Initial search.
 	req := &ldap.SearchRequest{
-		BaseDN: c.UserSearch.BaseDn,
+		BaseDN: c.UserSearch.BaseDN,
 		Filter: filter,
 		Scope:  c.userSearchScope,
 		// We only need to search for these specific requests.
@@ -428,7 +427,7 @@ func (c *ldapConnector) Refresh(ctx context.Context, s connector.Scopes, ident c
 }
 
 func (c *ldapConnector) groups(ctx context.Context, user ldap.Entry) ([]string, error) {
-	if c.GroupSearch.BaseDn == "" {
+	if c.GroupSearch.BaseDN == "" {
 		c.logger.Debugf("No groups returned for %q because no groups baseDN has been configured.", getAttr(user, c.UserSearch.NameAttr))
 		return nil, nil
 	}
@@ -441,7 +440,7 @@ func (c *ldapConnector) groups(ctx context.Context, user ldap.Entry) ([]string, 
 		}
 
 		req := &ldap.SearchRequest{
-			BaseDN:     c.GroupSearch.BaseDn,
+			BaseDN:     c.GroupSearch.BaseDN,
 			Filter:     filter,
 			Scope:      c.groupSearchScope,
 			Attributes: []string{c.GroupSearch.NameAttr},

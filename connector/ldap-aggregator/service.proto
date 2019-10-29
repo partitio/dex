@@ -5,6 +5,7 @@ package ldap_aggregator;
 option go_package = "ldapaggregator";
 
 import "github.com/infobloxopen/protoc-gen-gorm/options/gorm.proto";
+import "validate/validate.proto";
 import "config.proto";
 
 
@@ -28,7 +29,7 @@ message ListResponse {
 }
 
 message CreateRequest {
-    LdapConfig payload = 1;
+    LdapConfig payload = 1 [(validate.rules).message.required = true];
 }
 
 message CreateResponse {
@@ -46,7 +47,7 @@ message ReadResponse {
 }
 
 message UpdateRequest {
-    LdapConfig payload = 1;
+    LdapConfig payload = 1 [(validate.rules).message.required = true];
 }
 
 message UpdateResponse {

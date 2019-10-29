@@ -11,27 +11,27 @@ var crypto PasswordCrypto
 
 func (c *LdapConfig) AfterToORM(ctx context.Context, conf *LdapConfigORM) error {
 	conf.Id = c.Host
-	if len(c.BindPw) == 0 {
+	if len(c.BindPW) == 0 {
 		return nil
 	}
-	pw, err := crypto.EncryptPassword(c.BindPw)
+	pw, err := crypto.EncryptPassword(c.BindPW)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt password: %v", err)
 	}
-	conf.BindPw = pw
+	conf.BindPW = pw
 	return nil
 }
 
 func (c *LdapConfigORM) AfterToPB(ctx context.Context, conf *LdapConfig) error {
 	c.Id = conf.Host
-	if len(c.BindPw) == 0 {
+	if len(c.BindPW) == 0 {
 		return nil
 	}
-	pw, err := crypto.DecryptPassword(c.BindPw)
+	pw, err := crypto.DecryptPassword(c.BindPW)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt password: %v", err)
 	}
-	conf.BindPw = pw
+	conf.BindPW = pw
 	return nil
 }
 
