@@ -4,8 +4,8 @@ package ldap_aggregator;
 
 option go_package = "ldapaggregator";
 
-import "github.com/infobloxopen/protoc-gen-gorm/options/gorm.proto";
-import "validate/validate.proto";
+import "protoc-gen-gorm/options/gorm.proto";
+import "protoc-gen-validate/validate/validate.proto";
 
 
 
