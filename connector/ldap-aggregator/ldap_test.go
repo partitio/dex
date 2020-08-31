@@ -19,7 +19,7 @@ import (
 	"github.com/dexidp/dex/connector"
 )
 
-const envVar = "DEX_LDAP_TESTS"
+const envVar = "DEX_LDAP_AGGREGATOR_TESTS"
 
 // connectionMethod indicates how the test should connect to the LDAP server.
 type connectionMethod int32
@@ -732,7 +732,7 @@ func TestUsernamePrompt(t *testing.T) {
 // The tests require the slapd and ldapadd binaries available in the host
 // machine's PATH.
 //
-// The DEX_LDAP_TESTS must be set to "1"
+// The DEX_LDAP_AGGREGATOR_TESTS must be set to "1"
 func runTests(t *testing.T, schema string, connMethod connectionMethod, config *LdapConfig, tests []subtest) {
 	if os.Getenv(envVar) != "1" {
 		t.Skipf("%s not set. Skipping test (run 'export %s=1' to run tests)", envVar, envVar)
