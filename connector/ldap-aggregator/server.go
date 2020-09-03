@@ -144,6 +144,8 @@ func (c *ldapAggregatorConnector) Update(ctx context.Context, req *UpdateRequest
 	}
 	res, err := c.LdapAggregatorDefaultServer.Update(ctx, req)
 	if err != nil {
+		// TODO: uncomment to revert changes
+		// c.ldapConnectors = append(c.ldapConnectors[:index], c.ldapConnectors[index+1:]...)
 		return nil, err
 	}
 	res.Result.BindPW = ""
