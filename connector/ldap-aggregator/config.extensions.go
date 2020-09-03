@@ -10,9 +10,9 @@ import (
 var crypto PasswordCrypto
 
 func (c *LdapConfig) AfterToORM(ctx context.Context, conf *LdapConfigORM) error {
-	// TODO: the commented statement is apparently wrong
-	c.Host = conf.Id
-	// conf.Id = c.Host
+	if conf.Id == "" {
+		conf.Id = c.Host
+	}
 	if len(c.BindPW) == 0 {
 		return nil
 	}
@@ -25,7 +25,6 @@ func (c *LdapConfig) AfterToORM(ctx context.Context, conf *LdapConfigORM) error 
 }
 
 func (c *LdapConfigORM) AfterToPB(ctx context.Context, conf *LdapConfig) error {
-	c.Id = conf.Host
 	if len(c.BindPW) == 0 {
 		return nil
 	}

@@ -20,26 +20,27 @@ type LdapAggregatorDefaultServer struct {
 }
 
 // List ...
-func (m *LdapAggregatorDefaultServer) List(ctx context.Context, in *ListRequest) (*ListResponse, error) {
+func (m *LdapAggregatorDefaultServer) List(ctx context.Context, in *ListRequest, out *ListResponse) error {
 	db := m.DB
 	if custom, ok := interface{}(in).(LdapAggregatorLdapConfigWithBeforeList); ok {
 		var err error
 		if db, err = custom.BeforeList(ctx, db); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	res, err := DefaultListLdapConfig(ctx, db)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	out := &ListResponse{Results: res}
+	out.Results = res
+
 	if custom, ok := interface{}(in).(LdapAggregatorLdapConfigWithAfterList); ok {
 		var err error
 		if err = custom.AfterList(ctx, out, db); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // LdapAggregatorLdapConfigWithBeforeList called before DefaultListLdapConfig in the default List handler
@@ -53,26 +54,26 @@ type LdapAggregatorLdapConfigWithAfterList interface {
 }
 
 // Create ...
-func (m *LdapAggregatorDefaultServer) Create(ctx context.Context, in *CreateRequest) (*CreateResponse, error) {
+func (m *LdapAggregatorDefaultServer) Create(ctx context.Context, in *CreateRequest, out *CreateResponse) error {
 	db := m.DB
 	if custom, ok := interface{}(in).(LdapAggregatorLdapConfigWithBeforeCreate); ok {
 		var err error
 		if db, err = custom.BeforeCreate(ctx, db); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	res, err := DefaultCreateLdapConfig(ctx, in.GetPayload(), db)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	out := &CreateResponse{Result: res}
+	out.Result = res
 	if custom, ok := interface{}(in).(LdapAggregatorLdapConfigWithAfterCreate); ok {
 		var err error
 		if err = custom.AfterCreate(ctx, out, db); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // LdapAggregatorLdapConfigWithBeforeCreate called before DefaultCreateLdapConfig in the default Create handler
@@ -86,26 +87,26 @@ type LdapAggregatorLdapConfigWithAfterCreate interface {
 }
 
 // Read ...
-func (m *LdapAggregatorDefaultServer) Read(ctx context.Context, in *ReadRequest) (*ReadResponse, error) {
+func (m *LdapAggregatorDefaultServer) Read(ctx context.Context, in *ReadRequest, out *ReadResponse) error {
 	db := m.DB
 	if custom, ok := interface{}(in).(LdapAggregatorLdapConfigWithBeforeRead); ok {
 		var err error
 		if db, err = custom.BeforeRead(ctx, db); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	res, err := DefaultReadLdapConfig(ctx, &LdapConfig{Id: in.GetId()}, db)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	out := &ReadResponse{Result: res}
+	out.Result = res
 	if custom, ok := interface{}(in).(LdapAggregatorLdapConfigWithAfterRead); ok {
 		var err error
 		if err = custom.AfterRead(ctx, out, db); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // LdapAggregatorLdapConfigWithBeforeRead called before DefaultReadLdapConfig in the default Read handler
@@ -119,28 +120,28 @@ type LdapAggregatorLdapConfigWithAfterRead interface {
 }
 
 // Update ...
-func (m *LdapAggregatorDefaultServer) Update(ctx context.Context, in *UpdateRequest) (*UpdateResponse, error) {
+func (m *LdapAggregatorDefaultServer) Update(ctx context.Context, in *UpdateRequest, out *UpdateResponse) error {
 	var err error
 	var res *LdapConfig
 	db := m.DB
 	if custom, ok := interface{}(in).(LdapAggregatorLdapConfigWithBeforeUpdate); ok {
 		var err error
 		if db, err = custom.BeforeUpdate(ctx, db); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	res, err = DefaultStrictUpdateLdapConfig(ctx, in.GetPayload(), db)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	out := &UpdateResponse{Result: res}
+	out.Result = res
 	if custom, ok := interface{}(in).(LdapAggregatorLdapConfigWithAfterUpdate); ok {
 		var err error
 		if err = custom.AfterUpdate(ctx, out, db); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // LdapAggregatorLdapConfigWithBeforeUpdate called before DefaultUpdateLdapConfig in the default Update handler
@@ -154,26 +155,25 @@ type LdapAggregatorLdapConfigWithAfterUpdate interface {
 }
 
 // Delete ...
-func (m *LdapAggregatorDefaultServer) Delete(ctx context.Context, in *DeleteRequest) (*DeleteResponse, error) {
+func (m *LdapAggregatorDefaultServer) Delete(ctx context.Context, in *DeleteRequest, out *DeleteResponse) error {
 	db := m.DB
 	if custom, ok := interface{}(in).(LdapAggregatorLdapConfigWithBeforeDelete); ok {
 		var err error
 		if db, err = custom.BeforeDelete(ctx, db); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	err := DefaultDeleteLdapConfig(ctx, &LdapConfig{Id: in.GetId()}, db)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	out := &DeleteResponse{}
 	if custom, ok := interface{}(in).(LdapAggregatorLdapConfigWithAfterDelete); ok {
 		var err error
 		if err = custom.AfterDelete(ctx, out, db); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // LdapAggregatorLdapConfigWithBeforeDelete called before DefaultDeleteLdapConfig in the default Delete handler
@@ -184,4 +184,56 @@ type LdapAggregatorLdapConfigWithBeforeDelete interface {
 // LdapAggregatorLdapConfigWithAfterDelete called before DefaultDeleteLdapConfig in the default Delete handler
 type LdapAggregatorLdapConfigWithAfterDelete interface {
 	AfterDelete(context.Context, *DeleteResponse, *gorm1.DB) error
+}
+type LdapAggregatorDefaultGRPCServer struct {
+	s *LdapAggregatorDefaultServer
+}
+
+func NewLdapAggregatorDefaultGRPCServer(db *gorm1.DB) *LdapAggregatorDefaultGRPCServer {
+	return &LdapAggregatorDefaultGRPCServer{s: &LdapAggregatorDefaultServer{DB: db}}
+}
+
+// List ...
+func (m *LdapAggregatorDefaultGRPCServer) List(ctx context.Context, in *ListRequest) (*ListResponse, error) {
+	out := &ListResponse{}
+	if err := m.s.List(ctx, in, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Create ...
+func (m *LdapAggregatorDefaultGRPCServer) Create(ctx context.Context, in *CreateRequest) (*CreateResponse, error) {
+	out := &CreateResponse{}
+	if err := m.s.Create(ctx, in, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Read ...
+func (m *LdapAggregatorDefaultGRPCServer) Read(ctx context.Context, in *ReadRequest) (*ReadResponse, error) {
+	out := &ReadResponse{}
+	if err := m.s.Read(ctx, in, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Update ...
+func (m *LdapAggregatorDefaultGRPCServer) Update(ctx context.Context, in *UpdateRequest) (*UpdateResponse, error) {
+	out := &UpdateResponse{}
+	if err := m.s.Update(ctx, in, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Delete ...
+func (m *LdapAggregatorDefaultGRPCServer) Delete(ctx context.Context, in *DeleteRequest) (*DeleteResponse, error) {
+	out := &DeleteResponse{}
+	if err := m.s.Delete(ctx, in, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

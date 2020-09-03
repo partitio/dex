@@ -3,9 +3,7 @@ package ldapaggregator
 import (
 	"context"
 	"os"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
@@ -61,11 +59,8 @@ func TestRunServer(t *testing.T) {
 					Addr: "localhost:6666",
 				},
 			},
-			ldapConnectors:              []*ldapServer{},
-			logger:                      logrus.StandardLogger(),
-			m:                           sync.RWMutex{},
-			grpc:                        nil, // conn.Run() will store value in it
-			LdapAggregatorDefaultServer: &LdapAggregatorDefaultServer{},
+			logger:                          logrus.StandardLogger(),
+			LdapAggregatorDefaultGRPCServer: &LdapAggregatorDefaultGRPCServer{},
 		}
 
 		t.Run(test.name, test.fn)
@@ -80,6 +75,7 @@ func TestCreateLdap(t *testing.T) {
 	dbname := "test_create_config.db"
 	db, err := gorm.Open("sqlite3", dbname)
 	require.NoError(t, err)
+	defer os.Remove(dbname)
 	assert.NotNil(t, db)
 
 	err = db.AutoMigrate(&LdapConfigORM{}).Error
@@ -92,11 +88,8 @@ func TestCreateLdap(t *testing.T) {
 				Addr: "localhost:6666",
 			},
 		},
-		ldapConnectors:              []*ldapServer{},
-		logger:                      logrus.StandardLogger(),
-		m:                           sync.RWMutex{},
-		grpc:                        nil, // Run will store value in it
-		LdapAggregatorDefaultServer: &LdapAggregatorDefaultServer{DB: db},
+		logger:                          logrus.StandardLogger(),
+		LdapAggregatorDefaultGRPCServer: NewLdapAggregatorDefaultGRPCServer(db),
 	}
 	err = conn.Run()
 	require.NoError(t, err)
@@ -262,13 +255,13 @@ func TestCreateLdap(t *testing.T) {
 	}
 
 	conn.grpc.GracefulStop()
-	os.Remove(dbname)
 }
 
 func TestReadLdap(t *testing.T) {
 	dbname := "test_read_config.db"
 	db, err := gorm.Open("sqlite3", dbname)
 	require.NoError(t, err)
+	defer os.Remove(dbname)
 	assert.NotNil(t, db)
 
 	err = db.AutoMigrate(&LdapConfigORM{}).Error
@@ -281,11 +274,8 @@ func TestReadLdap(t *testing.T) {
 				Addr: "localhost:6666",
 			},
 		},
-		ldapConnectors:              []*ldapServer{},
-		logger:                      logrus.StandardLogger(),
-		m:                           sync.RWMutex{},
-		grpc:                        nil, // Run will store value in it
-		LdapAggregatorDefaultServer: &LdapAggregatorDefaultServer{DB: db},
+		logger:                          logrus.StandardLogger(),
+		LdapAggregatorDefaultGRPCServer: NewLdapAggregatorDefaultGRPCServer(db),
 	}
 
 	err = conn.Run()
@@ -293,7 +283,6 @@ func TestReadLdap(t *testing.T) {
 
 	test := func(t *testing.T) {
 		res, err := conn.Create(context.Background(), &CreateRequest{Payload: &LdapConfig{
-			Id:                 "1",
 			Host:               "localhost",
 			RootCA:             "testdata/ca.crt",
 			InsecureNoSSL:      false,
@@ -310,7 +299,7 @@ func TestReadLdap(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, res)
 
-		readRes, err := conn.Read(context.Background(), &ReadRequest{Id: "1"})
+		readRes, err := conn.Read(context.Background(), &ReadRequest{Id: res.Result.Id})
 		assert.NoError(t, err)
 		assert.NotNil(t, readRes)
 	}
@@ -318,13 +307,13 @@ func TestReadLdap(t *testing.T) {
 	t.Run("Read existing config", test)
 
 	conn.grpc.GracefulStop()
-	os.Remove(dbname)
 }
 
 func TestUpdateLdap(t *testing.T) {
 	dbname := "test_update_config.db"
 	db, err := gorm.Open("sqlite3", dbname)
 	require.NoError(t, err)
+	defer os.Remove(dbname)
 	assert.NotNil(t, db)
 
 	err = db.AutoMigrate(&LdapConfigORM{}).Error
@@ -337,11 +326,8 @@ func TestUpdateLdap(t *testing.T) {
 				Addr: "localhost:6666",
 			},
 		},
-		ldapConnectors:              []*ldapServer{},
-		logger:                      logrus.StandardLogger(),
-		m:                           sync.RWMutex{},
-		grpc:                        nil, // Run will store value in it
-		LdapAggregatorDefaultServer: &LdapAggregatorDefaultServer{DB: db},
+		logger:                          logrus.StandardLogger(),
+		LdapAggregatorDefaultGRPCServer: NewLdapAggregatorDefaultGRPCServer(db),
 	}
 
 	tests := []struct {
@@ -352,7 +338,6 @@ func TestUpdateLdap(t *testing.T) {
 			name: "Update an existing ldap config",
 			fn: func(t *testing.T) {
 				ldapConfig := &LdapConfig{
-					Id:                 "1",
 					Host:               "localhost",
 					RootCA:             "testdata/ca.crt",
 					InsecureNoSSL:      false,
@@ -370,11 +355,13 @@ func TestUpdateLdap(t *testing.T) {
 				res, err := conn.Create(context.Background(), &CreateRequest{Payload: ldapConfig})
 				require.NoError(t, err)
 				assert.NotNil(t, res)
+				assert.Equal(t, ldapConfig.Host, res.Result.Id)
+
+				ldapConfig = res.Result
 
 				ldapConfig.InsecureSkipVerify = true
 				ldapConfig.InsecureNoSSL = true
 
-				time.Sleep(2 * time.Second)
 				updateRes, err := conn.Update(context.Background(), &UpdateRequest{Payload: ldapConfig})
 				assert.NoError(t, err)
 				assert.NotNil(t, updateRes)
@@ -389,7 +376,6 @@ func TestUpdateLdap(t *testing.T) {
 			name: "try update a non existing config",
 			fn: func(t *testing.T) {
 				ldapConfig := &LdapConfig{
-					Id:                 "1",
 					Host:               "Invalid host",
 					RootCA:             "testdata/ca.crt",
 					InsecureNoSSL:      false,
@@ -404,12 +390,9 @@ func TestUpdateLdap(t *testing.T) {
 					GroupSearch: &GroupSearch{Scope: "one"},
 				}
 
-				res, err := conn.Create(context.Background(), &CreateRequest{Payload: ldapConfig})
-				require.NoError(t, err)
-				assert.NotNil(t, res)
-
 				resUpdate, err := conn.Update(context.Background(), &UpdateRequest{Payload: ldapConfig})
-				assert.Error(t, err)
+				require.Error(t, err)
+				require.NotNil(t, resUpdate)
 				assert.True(t, resUpdate.NotFound)
 			},
 		},
@@ -419,19 +402,17 @@ func TestUpdateLdap(t *testing.T) {
 		t.Run(test.name, test.fn)
 	}
 
-	conn.grpc.GracefulStop()
-	os.Remove(dbname)
 }
 
 func TestDeleteLdap(t *testing.T) {
 	dbname := "test_delete_config.db"
 	db, err := gorm.Open("sqlite3", dbname)
 	require.NoError(t, err)
+	defer os.Remove(dbname)
 	assert.NotNil(t, db)
 
 	err = db.AutoMigrate(&LdapConfigORM{}).Error
 	require.NoError(t, err)
-	db = db.Set("gorm:auto_preload", true)
 
 	conn := &ldapAggregatorConnector{
 		Config: Config{
@@ -439,11 +420,8 @@ func TestDeleteLdap(t *testing.T) {
 				Addr: "localhost:6666",
 			},
 		},
-		ldapConnectors:              []*ldapServer{},
-		logger:                      logrus.StandardLogger(),
-		m:                           sync.RWMutex{},
-		grpc:                        nil, // Run will store value in it
-		LdapAggregatorDefaultServer: &LdapAggregatorDefaultServer{DB: db},
+		logger:                          logrus.StandardLogger(),
+		LdapAggregatorDefaultGRPCServer: NewLdapAggregatorDefaultGRPCServer(db),
 	}
 
 	tests := []struct {
@@ -454,7 +432,6 @@ func TestDeleteLdap(t *testing.T) {
 			name: "Delete an existing ldap config",
 			fn: func(t *testing.T) {
 				ldapConfig := &LdapConfig{
-					Id:                 "1",
 					Host:               "localhost",
 					RootCA:             "testdata/ca.crt",
 					InsecureNoSSL:      false,
@@ -472,8 +449,8 @@ func TestDeleteLdap(t *testing.T) {
 				res, err := conn.Create(context.Background(), &CreateRequest{Payload: ldapConfig})
 				require.NoError(t, err)
 				assert.NotNil(t, res)
+				ldapConfig = res.Result
 
-				time.Sleep(2 * time.Second)
 				updateRes, err := conn.Delete(context.Background(), &DeleteRequest{Id: ldapConfig.Id})
 				assert.NoError(t, err)
 				assert.NotNil(t, updateRes)
@@ -497,6 +474,4 @@ func TestDeleteLdap(t *testing.T) {
 		t.Run(test.name, test.fn)
 	}
 
-	conn.grpc.GracefulStop()
-	os.Remove(dbname)
 }

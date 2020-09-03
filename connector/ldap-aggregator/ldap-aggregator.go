@@ -171,7 +171,7 @@ func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, err
 		}
 		ldapServers = append(ldapServers, &ldapServer{*ldapConfig, conn})
 	}
-	conn := &ldapAggregatorConnector{Config: *c, ldapConnectors: ldapServers, logger: logger, LdapAggregatorDefaultServer: &LdapAggregatorDefaultServer{db}}
+	conn := &ldapAggregatorConnector{db: db, Config: *c, ldapConnectors: ldapServers, logger: logger, LdapAggregatorDefaultGRPCServer: NewLdapAggregatorDefaultGRPCServer(db)}
 	err = conn.Run()
 	return conn, err
 }
@@ -200,7 +200,7 @@ func (c *ldapAggregatorConnector) Close() error {
 	if c.grpc != nil {
 		c.grpc.GracefulStop()
 	}
-	return c.DB.Close()
+	return c.db.Close()
 }
 
 type ldapServer struct {
@@ -218,7 +218,8 @@ type ldapAggregatorConnector struct {
 	logger         log.Logger
 	m              sync.RWMutex
 	grpc           *grpc.Server
-	*LdapAggregatorDefaultServer
+	*LdapAggregatorDefaultGRPCServer
+	db *gorm.DB
 }
 
 type refreshData struct {

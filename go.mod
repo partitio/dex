@@ -18,7 +18,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-sql-driver/mysql v1.4.1
 	github.com/golang/groupcache v0.0.0-20190702054246-869f871628b6 // indirect
-	github.com/golang/protobuf v1.3.2
+	github.com/golang/protobuf v1.4.1
 	github.com/google/btree v1.0.0 // indirect
 	github.com/gorilla/handlers v1.4.2
 	github.com/gorilla/mux v1.7.3
@@ -28,7 +28,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.9.5 // indirect
 	github.com/gtank/cryptopasta v0.0.0-20170601214702-1f550f6f2f69
 	github.com/iancoleman/strcase v0.0.0-20190422225806-e506e3ef7365 // indirect
-	github.com/infobloxopen/atlas-app-toolkit v0.0.0-20180810144038-3237ef051031
 	github.com/infobloxopen/protoc-gen-gorm v0.18.0
 	github.com/jinzhu/gorm v1.9.1
 	github.com/jinzhu/now v1.1.1 // indirect
@@ -41,10 +40,11 @@ require (
 	github.com/mattn/go-sqlite3 v1.11.0
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
+	github.com/partitio/atlas-app-toolkit v0.16.7
+	github.com/partitio/protoc-gen-gorm v0.20.0
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/pquerna/cachecontrol v0.0.0-20180517163645-1555304b9b35 // indirect
 	github.com/prometheus/client_golang v0.9.2
-	github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90 // indirect
 	github.com/prometheus/procfs v0.0.3 // indirect
 	github.com/russellhaering/goxmldsig v0.0.0-20180430223755-7acd5e4a6ef7
 	github.com/sirupsen/logrus v1.4.2
@@ -65,8 +65,9 @@ require (
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	golang.org/x/tools v0.0.0-20190813214729-9dba7caff850 // indirect
 	google.golang.org/appengine v1.6.1 // indirect
-	google.golang.org/genproto v0.0.0-20190801165951-fa694d86fc64
-	google.golang.org/grpc v1.23.0
+	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013
+	google.golang.org/grpc v1.27.0
+	google.golang.org/protobuf v1.25.0
 	gopkg.in/asn1-ber.v1 v1.0.0-20181015200546-f715ec2f112d // indirect
 	gopkg.in/ldap.v2 v2.5.1
 	gopkg.in/square/go-jose.v2 v2.3.1

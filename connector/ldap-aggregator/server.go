@@ -80,7 +80,7 @@ func (c *ldapAggregatorConnector) Run() error {
 func (c *ldapAggregatorConnector) List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 	c.m.RLock()
 	defer c.m.RUnlock()
-	res, err := c.LdapAggregatorDefaultServer.List(ctx, req)
+	res, err := c.LdapAggregatorDefaultGRPCServer.List(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (c *ldapAggregatorConnector) Create(ctx context.Context, req *CreateRequest
 		conf: *req.Payload,
 		conn: conn,
 	})
-	res, err := c.LdapAggregatorDefaultServer.Create(ctx, req)
+	res, err := c.LdapAggregatorDefaultGRPCServer.Create(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func (c *ldapAggregatorConnector) Create(ctx context.Context, req *CreateRequest
 func (c *ldapAggregatorConnector) Read(ctx context.Context, req *ReadRequest) (*ReadResponse, error) {
 	c.m.RLock()
 	defer c.m.RUnlock()
-	res, err := c.LdapAggregatorDefaultServer.Read(ctx, req)
+	res, err := c.LdapAggregatorDefaultGRPCServer.Read(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func (c *ldapAggregatorConnector) Update(ctx context.Context, req *UpdateRequest
 		conf: *req.Payload,
 		conn: conn,
 	}
-	res, err := c.LdapAggregatorDefaultServer.Update(ctx, req)
+	res, err := c.LdapAggregatorDefaultGRPCServer.Update(ctx, req)
 	if err != nil {
 		// TODO: uncomment to revert changes
 		if len := len(c.ldapConnectors); len == index+1 {
@@ -157,6 +157,10 @@ func (c *ldapAggregatorConnector) Update(ctx context.Context, req *UpdateRequest
 }
 
 func (c *ldapAggregatorConnector) Delete(ctx context.Context, req *DeleteRequest) (*DeleteResponse, error) {
+	_, err := c.LdapAggregatorDefaultGRPCServer.Delete(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 	c.m.Lock()
 	defer c.m.Unlock()
 	index := -1
