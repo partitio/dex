@@ -115,7 +115,8 @@ func (c *ldapAggregatorConnector) Read(ctx context.Context, req *ReadRequest) (*
 	defer c.m.RUnlock()
 	res, err := c.LdapAggregatorDefaultGRPCServer.Read(ctx, req)
 	if err != nil {
-		return nil, err
+		// TODO: Remove ReadResponse to revert change
+		return &ReadResponse{NotFound: true}, err
 	}
 	res.Result.BindPW = ""
 	return res, nil
@@ -144,11 +145,11 @@ func (c *ldapAggregatorConnector) Update(ctx context.Context, req *UpdateRequest
 	}
 	res, err := c.LdapAggregatorDefaultGRPCServer.Update(ctx, req)
 	if err != nil {
-		// TODO: uncomment to revert changes
+		// TODO: comment to revert changes
 		if len := len(c.ldapConnectors); len == index+1 {
-			// c.ldapConnectors = append(c.ldapConnectors[:index], c.ldapConnectors[index:]...)
+			c.ldapConnectors = append(c.ldapConnectors[:index], c.ldapConnectors[index:]...)
 		} else {
-			// c.ldapConnectors = append(c.ldapConnectors[:index], c.ldapConnectors[index+1:]...)
+			c.ldapConnectors = append(c.ldapConnectors[:index], c.ldapConnectors[index+1:]...)
 		}
 		return nil, err
 	}
