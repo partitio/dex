@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -243,6 +245,14 @@ func (c *ldapConnector) identityFromEntry(user ldap.Entry) (ident connector.Iden
 		missing = append(missing, c.UserSearch.IdAttr)
 	}
 
+	// Special case for AD objectGUID which we have to decode
+	if c.UserSearch.IdAttr == "objectGUID" && ident.UserID != "" {
+		var err error
+		if ident.UserID, err = decodeGUID([]byte(ident.UserID)); err != nil {
+			missing = append(missing, c.UserSearch.IdAttr)
+		}
+	}
+
 	if c.UserSearch.NameAttr != "" {
 		if ident.Username = getAttr(user, c.UserSearch.NameAttr); ident.Username == "" {
 			missing = append(missing, c.UserSearch.NameAttr)
@@ -424,6 +434,30 @@ func (c *ldapConnector) Refresh(ctx context.Context, s connector.Scopes, ident c
 		newIdent.Groups = groups
 	}
 	return newIdent, nil
+}
+
+func decodeGUID(b []byte) (string, error) {
+	reverse := func(s []byte) []byte {
+		var out []byte
+		for i := len(s) - 1; i >= 0; i-- {
+			out = append(out, s[i])
+		}
+		return out
+	}
+	if len(b) != 16 {
+		return "", errors.New("bytes length must be 16")
+	}
+	buf := make([]byte, 36)
+	hex.Encode(buf, reverse(b[:4]))
+	buf[8] = '-'
+	hex.Encode(buf[9:13], reverse(b[4:6]))
+	buf[13] = '-'
+	hex.Encode(buf[14:18], reverse(b[6:8]))
+	buf[18] = '-'
+	hex.Encode(buf[19:23], b[8:10])
+	buf[23] = '-'
+	hex.Encode(buf[24:], b[10:])
+	return string(buf), nil
 }
 
 func (c *ldapConnector) groups(ctx context.Context, user ldap.Entry) ([]string, error) {

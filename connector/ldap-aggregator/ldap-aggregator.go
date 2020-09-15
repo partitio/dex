@@ -34,6 +34,7 @@ import (
 //         tlsCert: examples/grpc-client/server.crt
 //         tlsKey: examples/grpc-client/server.key
 //         tlsClientCA: /etc/dex/client.crt
+//		 passPhrase: shouldBeSecure!
 // 		 # SQLite can be used as db engine
 //       sqlite: ./ldap-aggregator.db
 // 		 # Postgres will overide any SQLite configuration
@@ -99,7 +100,7 @@ type PostgresConfig struct {
 	Database string `json:"database"`
 }
 
-// Open returns an authentication strategy using LDAP.
+// Open returns an authentication strategy using LDAP Servers.
 func (c *Config) Open(id string, logger log.Logger) (connector.Connector, error) {
 	conn, err := c.OpenConnector(logger)
 	if err != nil {
@@ -241,7 +242,7 @@ func (c *ldapAggregatorConnector) Login(ctx context.Context, s connector.Scopes,
 	}
 	results := make(chan result)
 	c.m.RLock()
-	defer c.m.Unlock()
+	defer c.m.RUnlock()
 	var wg sync.WaitGroup
 	for _, l := range c.ldapConnectors {
 		wg.Add(1)
@@ -281,7 +282,7 @@ func (c *ldapAggregatorConnector) Refresh(ctx context.Context, s connector.Scope
 	}
 	var a *ldapServer
 	c.m.RLock()
-	defer c.m.Unlock()
+	defer c.m.RUnlock()
 	for _, ac := range c.ldapConnectors {
 		if ac.conf.Host == data.Source {
 			a = ac
