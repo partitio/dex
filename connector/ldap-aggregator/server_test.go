@@ -16,9 +16,8 @@ func TestRunServer(t *testing.T) {
 	var conn *ldapAggregatorConnector
 
 	tests := []struct {
-		name    string
-		fn      func(*testing.T)
-		srvStop bool
+		name string
+		fn   func(*testing.T)
 	}{
 		{
 			name: "run server w/ TLS",
@@ -26,7 +25,6 @@ func TestRunServer(t *testing.T) {
 				err := conn.Run()
 				assert.NoError(t, err)
 			},
-			srvStop: true,
 		},
 		{
 			name: "run server w TLS",
@@ -37,7 +35,6 @@ func TestRunServer(t *testing.T) {
 				err := conn.Run()
 				assert.NoError(t, err)
 			},
-			srvStop: true,
 		},
 		{
 			name: "ldap aggregator API is disabled",
@@ -47,7 +44,6 @@ func TestRunServer(t *testing.T) {
 				// TODO: Not useful, change it
 				assert.Nil(t, err)
 			},
-			srvStop: false,
 		},
 	}
 
@@ -65,7 +61,7 @@ func TestRunServer(t *testing.T) {
 
 		t.Run(test.name, test.fn)
 
-		if test.srvStop {
+		if conn.grpc != nil {
 			conn.grpc.GracefulStop()
 		}
 	}
