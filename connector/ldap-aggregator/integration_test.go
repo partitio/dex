@@ -126,19 +126,19 @@ func Test(t *testing.T) {
 
 	client = NewLdapAggregatorClient(grpcConn)
 
-	t.Run("create an ldap config", TestCreateConfig)
-	t.Run("update ldap config", TestUpdateConfig)
-	t.Run("update a non-existing ldap config", TestConfigNotFound)
-	t.Run("read config", TestReadConfig)
-	t.Run("read non-existing config", TestReadNonExistingConfig)
-	t.Run("list all configs", TestListConfig)
-	t.Run("delete ldap config", TestDeleteConfig)
-	t.Run("delete a non-existing ldap config", TestDeleteNonExistingConfig)
+	t.Run("create an ldap config", testCreateConfig)
+	t.Run("update ldap config", testUpdateConfig)
+	t.Run("update a non-existing ldap config", testConfigNotFound)
+	t.Run("read config", testReadConfig)
+	t.Run("read non-existing config", testReadNonExistingConfig)
+	t.Run("list all configs", testListConfig)
+	t.Run("delete ldap config", testDeleteConfig)
+	t.Run("delete a non-existing ldap config", testDeleteNonExistingConfig)
 }
 
 var id string
 
-func TestCreateConfig(t *testing.T) {
+func testCreateConfig(t *testing.T) {
 	for i, j := range servers {
 		config := &LdapConfig{
 			Host:               j.addr,
@@ -180,7 +180,7 @@ func TestCreateConfig(t *testing.T) {
 	}
 }
 
-func TestUpdateConfig(t *testing.T) {
+func testUpdateConfig(t *testing.T) {
 	for i, j := range servers {
 		config := &LdapConfig{
 			Host:               j.addr,
@@ -227,7 +227,7 @@ func TestUpdateConfig(t *testing.T) {
 	}
 }
 
-func TestConfigNotFound(t *testing.T) {
+func testConfigNotFound(t *testing.T) {
 	config := &LdapConfig{
 		Host:               "wrong_host",
 		InsecureNoSSL:      true,
@@ -252,7 +252,7 @@ func TestConfigNotFound(t *testing.T) {
 	assert.Equal(t, "rpc error: code = Unknown desc = wrong_host not found", err.Error())
 }
 
-func TestReadConfig(t *testing.T) {
+func testReadConfig(t *testing.T) {
 	res, err := client.Read(context.Background(), &ReadRequest{Id: id})
 	require.NoError(t, err)
 	require.NotNil(t, res.Result)
@@ -260,19 +260,19 @@ func TestReadConfig(t *testing.T) {
 	assert.False(t, res.NotFound)
 }
 
-func TestReadNonExistingConfig(t *testing.T) {
+func testReadNonExistingConfig(t *testing.T) {
 	_, err := client.Read(context.Background(), &ReadRequest{Id: "wrong_id"})
 	assert.Error(t, err)
 }
 
-func TestListConfig(t *testing.T) {
+func testListConfig(t *testing.T) {
 	res, err := client.List(context.Background(), &ListRequest{})
 	require.NoError(t, err)
 	require.Len(t, res.Results, 3)
 	assert.Equal(t, id, res.Results[0].Id)
 }
 
-func TestDeleteConfig(t *testing.T) {
+func testDeleteConfig(t *testing.T) {
 	res, err := client.Delete(context.Background(), &DeleteRequest{Id: id})
 	require.NoError(t, err)
 	assert.False(t, res.NotFound)
@@ -285,7 +285,7 @@ func TestDeleteConfig(t *testing.T) {
 	testLogin(t, "jane", "Pas$w0rd!", "jane@example.com", false)
 }
 
-func TestDeleteNonExistingConfig(t *testing.T) {
+func testDeleteNonExistingConfig(t *testing.T) {
 	_, err := client.Delete(context.Background(), &DeleteRequest{Id: "wrong_id"})
 	require.Error(t, err)
 	assert.Equal(t, "rpc error: code = Unknown desc = wrong_id not found", err.Error())
