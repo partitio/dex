@@ -2,6 +2,7 @@ package ldapaggregator
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
@@ -20,14 +21,20 @@ var (
 	client        LdapAggregatorClient
 	dockerCompose = "connector/ldap-aggregator/testdata/docker-compose.yml"
 	servers       = []struct {
-		name  string
-		users []struct {
+		name     string
+		password string
+		addr     string
+		endUrl   string
+		users    []struct {
 			username string
 			password string
 		}
 	}{
 		{
-			name: "ldap-1",
+			name:     "ldap-1",
+			password: "Passw1rd!",
+			addr:     "127.0.0.1:1636",
+			endUrl:   "com",
 			users: []struct {
 				username string
 				password string
@@ -43,7 +50,10 @@ var (
 			},
 		},
 		{
-			name: "ldap-2",
+			name:     "ldap-2",
+			password: "Passw2rd!",
+			addr:     "127.0.0.1:2636",
+			endUrl:   "net",
 			users: []struct {
 				username string
 				password string
@@ -59,7 +69,10 @@ var (
 			},
 		},
 		{
-			name: "ldap-3",
+			name:     "ldap-3",
+			password: "Passw3rd!",
+			addr:     "127.0.0.1:3636",
+			endUrl:   "org",
 			users: []struct {
 				username string
 				password string
@@ -126,88 +139,92 @@ func Test(t *testing.T) {
 var id string
 
 func TestCreateConfig(t *testing.T) {
-	config := &LdapConfig{
-		Host:               "127.0.0.1:1636",
-		InsecureSkipVerify: true,
-		BindDN:             "cn=administrator,cn=users,dc=example,dc=com",
-		BindPW:             "Passw1rd!",
-		UsernamePrompt:     "username",
-		UserSearch: &UserSearch{
-			BaseDN:      "cn=users,dc=example,dc=com",
-			Filter:      "(objectClass=user)",
-			Username:    "sAMAccountName",
-			IdAttr:      "objectGUID",
-			EmailAttr:   "mail",
-			NameAttr:    "cn",
-			EmailSuffix: "example.com",
-		},
-		GroupSearch: &GroupSearch{
-			BaseDN:    "cn=groups,dc=example,dc=com",
-			Filter:    "(objectClass=group)",
-			UserAttr:  "DN",
-			GroupAttr: "member",
-			NameAttr:  "cn",
-		},
+	for i, j := range servers {
+		config := &LdapConfig{
+			Host:               j.addr,
+			InsecureSkipVerify: true,
+			BindDN:             fmt.Sprint("cn=administrator,cn=users,dc=example,dc=", j.endUrl),
+			BindPW:             j.password,
+			UsernamePrompt:     "username",
+			UserSearch: &UserSearch{
+				BaseDN:      fmt.Sprint("cn=users,dc=example,dc=", j.endUrl),
+				Filter:      "(objectClass=user)",
+				Username:    "sAMAccountName",
+				IdAttr:      "objectGUID",
+				EmailAttr:   "mail",
+				NameAttr:    "cn",
+				EmailSuffix: fmt.Sprint("example.", j.endUrl),
+			},
+			GroupSearch: &GroupSearch{
+				BaseDN:    fmt.Sprint("cn=groups,dc=example,dc=", j.endUrl),
+				Filter:    "(objectClass=group)",
+				UserAttr:  "DN",
+				GroupAttr: "member",
+				NameAttr:  "cn",
+			},
+		}
+
+		res, err := client.Create(context.Background(), &CreateRequest{Payload: config})
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		assert.False(t, res.AlreadyExists)
+		assert.Equal(t, config.Host, res.Result.Host)
+
+		for _, v := range j.users {
+			testLogin(t, v.username, v.password, v.username+"@example."+j.endUrl, true)
+		}
+
+		if i == 0 {
+			id = res.Result.Id
+		}
 	}
-
-	res, err := client.Create(context.Background(), &CreateRequest{Payload: config})
-	require.NoError(t, err)
-	require.NotNil(t, res)
-	assert.False(t, res.AlreadyExists)
-	assert.Equal(t, config.Host, res.Result.Host)
-
-	identity, valid, err := conn.Login(context.Background(), connector.Scopes{Groups: false, OfflineAccess: false}, "john", "Pas$w0rd!")
-	require.NoError(t, err)
-	require.True(t, valid)
-	require.NotNil(t, identity)
-	assert.Equal(t, "john", identity.Username)
-
-	id = res.Result.Id
 }
 
 func TestUpdateConfig(t *testing.T) {
-	config := &LdapConfig{
-		Host:               "127.0.0.1:1636",
-		InsecureSkipVerify: true,
-		BindDN:             "cn=john,cn=users,dc=example,dc=com",
-		BindPW:             "Pas$w0rd!",
-		UsernamePrompt:     "username",
-		UserSearch: &UserSearch{
-			BaseDN:      "cn=users,dc=example,dc=com",
-			Filter:      "(objectClass=user)",
-			Username:    "sAMAccountName",
-			IdAttr:      "objectGUID",
-			EmailAttr:   "mail",
-			NameAttr:    "cn",
-			EmailSuffix: "example.com",
-		},
-		GroupSearch: &GroupSearch{
-			BaseDN:    "cn=groups,dc=example,dc=com",
-			Filter:    "(objectClass=group)",
-			UserAttr:  "DN",
-			GroupAttr: "member",
-			NameAttr:  "cn",
-		},
+	for i, j := range servers {
+		config := &LdapConfig{
+			Host:               j.addr,
+			InsecureSkipVerify: true,
+			BindDN:             fmt.Sprint("cn=", j.users[0].username, ",cn=users,dc=example,dc=", j.endUrl),
+			BindPW:             j.users[0].password,
+			UsernamePrompt:     "username",
+			UserSearch: &UserSearch{
+				BaseDN:      fmt.Sprint("cn=users,dc=example,dc=", j.endUrl),
+				Filter:      "(objectClass=user)",
+				Username:    "sAMAccountName",
+				IdAttr:      "objectGUID",
+				EmailAttr:   "mail",
+				NameAttr:    "cn",
+				EmailSuffix: fmt.Sprint("example.", j.endUrl),
+			},
+			GroupSearch: &GroupSearch{
+				BaseDN:    fmt.Sprint("cn=groups,dc=example,dc=", j.endUrl),
+				Filter:    "(objectClass=group)",
+				UserAttr:  "DN",
+				GroupAttr: "member",
+				NameAttr:  "cn",
+			},
+		}
+
+		res, err := client.Update(context.Background(), &UpdateRequest{Payload: config})
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		assert.False(t, res.NotFound)
+		assert.Equal(t, config.BindDN, res.Result.BindDN)
+		assert.Equal(t, config.Host, res.Result.Host)
+		require.NotNil(t, config.UserSearch)
+		assert.Equal(t, config.UserSearch.BaseDN, res.Result.UserSearch.BaseDN)
+		require.NotNil(t, config.GroupSearch)
+		assert.Equal(t, config.GroupSearch.BaseDN, res.Result.GroupSearch.BaseDN)
+
+		for _, v := range j.users {
+			testLogin(t, v.username, v.password, v.username+"@example."+j.endUrl, true)
+		}
+
+		if i == 0 {
+			id = res.Result.Id
+		}
 	}
-
-	res, err := client.Update(context.Background(), &UpdateRequest{Payload: config})
-	require.NoError(t, err)
-	require.NotNil(t, res)
-	assert.False(t, res.NotFound)
-	assert.Equal(t, config.BindDN, res.Result.BindDN)
-	assert.Equal(t, config.Host, res.Result.Host)
-	require.NotNil(t, config.UserSearch)
-	assert.Equal(t, config.UserSearch.BaseDN, res.Result.UserSearch.BaseDN)
-	require.NotNil(t, config.GroupSearch)
-	assert.Equal(t, config.GroupSearch.BaseDN, res.Result.GroupSearch.BaseDN)
-
-	identity, valid, err := conn.Login(context.Background(), connector.Scopes{Groups: false, OfflineAccess: false}, "john", "Pas$w0rd!")
-	require.NoError(t, err)
-	require.True(t, valid)
-	require.NotNil(t, identity)
-	assert.Equal(t, "john", identity.Username)
-
-	id = res.Result.Id
 }
 
 func TestConfigNotFound(t *testing.T) {
@@ -251,7 +268,7 @@ func TestReadNonExistingConfig(t *testing.T) {
 func TestListConfig(t *testing.T) {
 	res, err := client.List(context.Background(), &ListRequest{})
 	require.NoError(t, err)
-	require.Len(t, res.Results, 1)
+	require.Len(t, res.Results, 3)
 	assert.Equal(t, id, res.Results[0].Id)
 }
 
@@ -264,16 +281,24 @@ func TestDeleteConfig(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, read)
 
-	identity, valid, err := conn.Login(context.Background(), connector.Scopes{Groups: false, OfflineAccess: false}, "john", "Pas$w0rd!")
-	// require.NoError(t, err)
-	require.False(t, valid)
-	assert.NotEqual(t, "john", identity.Username)
+	testLogin(t, "john", "Pas$w0rd!", "john@example.com", false)
+	testLogin(t, "jane", "Pas$w0rd!", "jane@example.com", false)
 }
 
 func TestDeleteNonExistingConfig(t *testing.T) {
 	_, err := client.Delete(context.Background(), &DeleteRequest{Id: "wrong_id"})
 	require.Error(t, err)
 	assert.Equal(t, "rpc error: code = Unknown desc = wrong_id not found", err.Error())
+}
+
+func testLogin(t *testing.T, username, password, email string, valid bool) {
+	identity, ok, err := conn.Login(context.Background(), connector.Scopes{Groups: false, OfflineAccess: false}, username, password)
+	require.NoError(t, err)
+	assert.Equal(t, valid, ok)
+	if valid {
+		assert.Equal(t, username, identity.Username)
+		assert.Equal(t, email, identity.Email)
+	}
 }
 
 func prepare() error {
