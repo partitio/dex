@@ -36,9 +36,8 @@ func (c *Crypto) DecryptPassword(pass []byte) (string, error) {
 }
 
 func (c *Crypto) createHash() string {
-	hasher := md5.New()
-	hasher.Write([]byte(c.key))
-	return hex.EncodeToString(hasher.Sum(nil))
+	hash := md5.Sum([]byte(c.key))
+	return hex.EncodeToString(hash[:])
 }
 
 func (c *Crypto) encryptString(data string) (string, error) {
