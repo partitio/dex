@@ -27,11 +27,11 @@ func NewCrypto(key string) (PasswordCrypto, error) {
 }
 
 func (c *Crypto) EncryptPassword(pass string) ([]byte, error) {
-	return c.encrypt([]byte(pass), c.key)
+	return c.encrypt([]byte(pass))
 }
 
 func (c *Crypto) DecryptPassword(pass []byte) (string, error) {
-	b, err := c.decrypt(pass, c.key)
+	b, err := c.decrypt(pass)
 	return string(b), err
 }
 
@@ -41,12 +41,12 @@ func (c *Crypto) createHash() string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-func (c *Crypto) encryptString(data string, passphrase string) (string, error) {
-	s, err := c.encrypt([]byte(data), passphrase)
+func (c *Crypto) encryptString(data string) (string, error) {
+	s, err := c.encrypt([]byte(data))
 	return string(s), err
 }
 
-func (c *Crypto) encrypt(data []byte, passphrase string) ([]byte, error) {
+func (c *Crypto) encrypt(data []byte) ([]byte, error) {
 	block, _ := aes.NewCipher([]byte(c.createHash()))
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
@@ -60,12 +60,12 @@ func (c *Crypto) encrypt(data []byte, passphrase string) ([]byte, error) {
 	return ciphertext, nil
 }
 
-func (c *Crypto) decryptString(data string, passphrase string) (string, error) {
-	s, err := c.decrypt([]byte(data), passphrase)
+func (c *Crypto) decryptString(data string) (string, error) {
+	s, err := c.decrypt([]byte(data))
 	return string(s), err
 }
 
-func (c *Crypto) decrypt(data []byte, passphrase string) ([]byte, error) {
+func (c *Crypto) decrypt(data []byte) ([]byte, error) {
 	// out := data
 	key := []byte(c.createHash())
 	block, err := aes.NewCipher(key)
