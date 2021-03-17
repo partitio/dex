@@ -141,7 +141,6 @@ func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, err
 		if err := db.AutoMigrate(&LdapConfigORM{}).Error; err != nil {
 			return nil, fmt.Errorf("failed to migrate database: %v", err)
 		}
-		db = db.Set("gorm:auto_preload", true)
 		// Check if db contains ldap servers
 		ss, err := DefaultListLdapConfig(context.Background(), db)
 		if err != nil {

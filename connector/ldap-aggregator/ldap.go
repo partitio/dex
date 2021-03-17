@@ -236,7 +236,7 @@ func getAttr(e ldap.Entry, name string) string {
 }
 
 func (c *ldapConnector) identityFromEntry(user ldap.Entry) (ident connector.Identity, err error) {
-	// If we're missing any attributes, such as email or ID, we want to report
+	// If we're missing any attributes, such as name or ID, we want to report
 	// an error rather than continuing.
 	missing := []string{}
 
@@ -261,9 +261,8 @@ func (c *ldapConnector) identityFromEntry(user ldap.Entry) (ident connector.Iden
 
 	if c.UserSearch.EmailSuffix != "" {
 		ident.Email = ident.Username + "@" + c.UserSearch.EmailSuffix
-	} else if ident.Email = getAttr(user, c.UserSearch.EmailAttr); ident.Email == "" {
-		missing = append(missing, c.UserSearch.EmailAttr)
 	}
+	ident.Email = getAttr(user, c.UserSearch.EmailAttr)
 	// TODO(ericchiang): Let this value be set from an attribute.
 	ident.EmailVerified = true
 
