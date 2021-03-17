@@ -129,7 +129,7 @@ func Test(t *testing.T) {
 	defer grpcConn.Close()
 
 	client = NewLdapAggregatorClient(grpcConn)
-
+	t.Run("create ldap config with invalid DN for organization", testCreateConfigInvalidDN)
 	t.Run("create an ldap config", testCreateConfig)
 	t.Run("update ldap config", testUpdateConfig)
 	t.Run("update a non-existing ldap config", testConfigNotFound)
@@ -142,6 +142,37 @@ func Test(t *testing.T) {
 
 var id string
 
+func testCreateConfigInvalidDN(t *testing.T) {
+	j := servers[0]
+	config := &LdapConfig{
+		Host:               j.addr,
+		InsecureSkipVerify: true,
+		BindDN:             fmt.Sprint("cn=administrator,cn=users,=", j.endUrl),
+		BindPW:             j.password,
+		UsernamePrompt:     "username",
+		UserSearch: &UserSearch{
+			BaseDN:      fmt.Sprint("cn=users,dc=example,dc=", j.endUrl),
+			Filter:      "(objectClass=user)",
+			Username:    "sAMAccountName",
+			IdAttr:      "objectGUID",
+			EmailAttr:   "mail",
+			NameAttr:    "cn",
+			EmailSuffix: fmt.Sprint("example.", j.endUrl),
+		},
+		GroupSearch: &GroupSearch{
+			BaseDN:    fmt.Sprint("cn=groups,dc=example,dc=", j.endUrl),
+			Filter:    "(objectClass=group)",
+			UserAttr:  "DN",
+			GroupAttr: "member",
+			NameAttr:  "cn",
+		},
+	}
+
+	res, err := client.Create(context.Background(), &CreateRequest{Payload: config})
+	require.Error(t, err)
+	require.
+		Nil(t, res)
+}
 func testCreateConfig(t *testing.T) {
 	for i, j := range servers {
 		config := &LdapConfig{
@@ -173,7 +204,7 @@ func testCreateConfig(t *testing.T) {
 		require.NotNil(t, res)
 		assert.False(t, res.AlreadyExists)
 		assert.Equal(t, config.Host, res.Result.Host)
-		assert.Equal(t, "example", config.Organization)
+		assert.Equal(t, "example", res.Result.Organization)
 		for _, v := range j.users {
 			testLogin(t, v.username, v.password, v.username+"@example."+j.endUrl, true)
 		}
@@ -310,7 +341,7 @@ func prepare() error {
 	if _, err := os.Stat(dockerCompose); os.IsNotExist(err) {
 		dockerCompose = "testdata/docker-compose.yml"
 	}
-	wait := time.Duration(15)
+	wait := time.Duration(30)
 	logrus.Info("Pulling docker images")
 	if err := runDockerComposeCommand("pull"); err != nil {
 		return err

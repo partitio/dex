@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"strings"
 
 	"gopkg.in/ldap.v2"
 
@@ -156,6 +157,15 @@ func (c *LdapConfig) openConnector(logger log.Logger) (*ldapConnector, error) {
 	groupSearchScope, ok := parseScope(c.GroupSearch.Scope)
 	if !ok {
 		return nil, fmt.Errorf("groupSearch.Scope unknown value %q", c.GroupSearch.Scope)
+	}
+	// Organization is zero value so we set it to DN
+	if c.Organization == "" {
+		dnParsed := strings.Split(c.BindDN, "dc=")
+		if len(dnParsed) < 2 {
+			return nil, fmt.Errorf("could not retrieve organization from BindDN, bindDN must contain at least 2 dc")
+		}
+		// We use the second last dn (dn=example,dn=com will use example as organization name))
+		c.Organization = strings.Replace(dnParsed[len(dnParsed)-2], ",", "", 1)
 	}
 	return &ldapConnector{*c, userSearchScope, groupSearchScope, tlsConfig, logger}, nil
 }

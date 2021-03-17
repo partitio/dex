@@ -34,7 +34,7 @@ func TestConfigNoAPINoServers(t *testing.T) {
 }
 
 func TestServer(t *testing.T) {
-	addr := "0.0.0.0:9090"
+	addr := "0.0.0.0:9092"
 	config := &Config{
 		GRPC: &GRPC{
 			Addr: addr,

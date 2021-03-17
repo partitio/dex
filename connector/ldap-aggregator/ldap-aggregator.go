@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 
 	"github.com/jinzhu/gorm"
@@ -165,15 +164,6 @@ func (c *Config) openConnector(logger log.Logger) (*ldapAggregatorConnector, err
 		if err != nil {
 			logger.Errorf("invalid aggregated ldap: %s", err)
 			continue
-		}
-		// Organization is zero value so we set it to DN
-		if ldapConfig.Organization == "" {
-			dnParsed := strings.Split(ldapConfig.BindDN, "dc=")
-			if len(dnParsed) < 2 {
-				return nil, fmt.Errorf("could not retrieve organization from BindDN, bindDN must contain at least 2 dc")
-			}
-			// We use the second last dn (dn=example,dn=com will use example as organization name))
-			ldapConfig.Organization = strings.Replace(dnParsed[len(dnParsed)-2], ",", "", 1)
 		}
 		ldapConfig.Id = ldapConfig.Host
 		if c.ApiEnabled() {

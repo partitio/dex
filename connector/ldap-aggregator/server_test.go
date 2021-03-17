@@ -103,6 +103,7 @@ func TestCreateLdap(t *testing.T) {
 					InsecureNoSSL:      false,
 					InsecureSkipVerify: false,
 					ClientCert:         "testdata/client.crt",
+					Organization:       "test",
 					ClientKey:          "testdata/client.key",
 					UserSearch: &UserSearch{
 						BaseDN:   "default",
@@ -121,6 +122,28 @@ func TestCreateLdap(t *testing.T) {
 			},
 		},
 		{
+			name: "create a ldap config without organization",
+			fn: func(t *testing.T) {
+				res, err := conn.Create(context.Background(), &CreateRequest{Payload: &LdapConfig{
+					Host:               "localhost",
+					RootCA:             "testdata/ca.crt",
+					InsecureNoSSL:      false,
+					InsecureSkipVerify: false,
+					ClientCert:         "testdata/client.crt",
+					ClientKey:          "testdata/client.key",
+
+					UserSearch: &UserSearch{
+						BaseDN:   "default",
+						Username: "default_username",
+						Scope:    "one",
+					},
+					GroupSearch: &GroupSearch{Scope: "one"},
+				}})
+				require.Error(t, err)
+				assert.Nil(t, res)
+			},
+		},
+		{
 			name: "failed to open a connector without required fields",
 			fn: func(t *testing.T) {
 				res, err := conn.Create(context.Background(), &CreateRequest{Payload: &LdapConfig{
@@ -129,6 +152,8 @@ func TestCreateLdap(t *testing.T) {
 						BaseDN:   "",
 						Username: "",
 					},
+					Organization:       "test",
+
 				}})
 				assert.Error(t, err)
 				assert.Equal(t, "ldap: missing required field \"host\"", err.Error())
@@ -141,6 +166,8 @@ func TestCreateLdap(t *testing.T) {
 				res, err := conn.Create(context.Background(), &CreateRequest{Payload: &LdapConfig{
 					Host:   "localhost",
 					RootCA: "./wrong_file.ca",
+					Organization:       "test",
+
 					UserSearch: &UserSearch{
 						BaseDN:   "default",
 						Username: "default_username",
@@ -155,6 +182,7 @@ func TestCreateLdap(t *testing.T) {
 			fn: func(t *testing.T) {
 				res, err := conn.Create(context.Background(), &CreateRequest{Payload: &LdapConfig{
 					Host:       "localhost",
+					Organization:       "test",
 					RootCAData: []byte{00, 11},
 					UserSearch: &UserSearch{
 						BaseDN:   "default",
@@ -173,6 +201,7 @@ func TestCreateLdap(t *testing.T) {
 					Host:       "localhost",
 					RootCA:     "testdata/ca.crt",
 					ClientCert: "testdata/wrong_client.crt",
+					Organization:       "test",
 					ClientKey:  "testdata/wrong_client.key",
 					UserSearch: &UserSearch{
 						BaseDN:   "default",
@@ -191,6 +220,7 @@ func TestCreateLdap(t *testing.T) {
 					RootCA:     "testdata/ca.crt",
 					ClientCert: "testdata/client.crt",
 					ClientKey:  "testdata/client.key",
+					Organization:       "test",
 					UserSearch: &UserSearch{
 						BaseDN:   "default",
 						Username: "default_username",
@@ -209,6 +239,7 @@ func TestCreateLdap(t *testing.T) {
 					Host:       "localhost",
 					RootCA:     "testdata/ca.crt",
 					ClientCert: "testdata/client.crt",
+					Organization:       "test",
 					ClientKey:  "testdata/client.key",
 					UserSearch: &UserSearch{
 						BaseDN:   "default",
@@ -282,6 +313,8 @@ func TestReadLdap(t *testing.T) {
 			Host:               "localhost",
 			RootCA:             "testdata/ca.crt",
 			InsecureNoSSL:      false,
+			Organization:       "test",
+
 			InsecureSkipVerify: false,
 			ClientCert:         "testdata/client.crt",
 			ClientKey:          "testdata/client.key",
@@ -338,6 +371,7 @@ func TestUpdateLdap(t *testing.T) {
 					RootCA:             "testdata/ca.crt",
 					InsecureNoSSL:      false,
 					InsecureSkipVerify: false,
+					Organization:       "test",
 					ClientCert:         "testdata/client.crt",
 					ClientKey:          "testdata/client.key",
 					UserSearch: &UserSearch{
@@ -375,6 +409,7 @@ func TestUpdateLdap(t *testing.T) {
 					Host:               "Invalid host",
 					RootCA:             "testdata/ca.crt",
 					InsecureNoSSL:      false,
+					Organization:       "test",
 					InsecureSkipVerify: false,
 					ClientCert:         "testdata/client.crt",
 					ClientKey:          "testdata/client.key",
@@ -433,6 +468,7 @@ func TestDeleteLdap(t *testing.T) {
 					InsecureNoSSL:      false,
 					InsecureSkipVerify: false,
 					ClientCert:         "testdata/client.crt",
+					Organization:       "test",
 					ClientKey:          "testdata/client.key",
 					UserSearch: &UserSearch{
 						BaseDN:   "default",
