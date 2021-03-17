@@ -173,7 +173,7 @@ func testCreateConfig(t *testing.T) {
 		require.NotNil(t, res)
 		assert.False(t, res.AlreadyExists)
 		assert.Equal(t, config.Host, res.Result.Host)
-
+		assert.Equal(t, "example", config.Organization)
 		for _, v := range j.users {
 			testLogin(t, v.username, v.password, v.username+"@example."+j.endUrl, true)
 		}
@@ -201,6 +201,7 @@ func testUpdateConfig(t *testing.T) {
 				NameAttr:    "cn",
 				EmailSuffix: fmt.Sprint("example.", j.endUrl),
 			},
+			Organization: "update-organization",
 			GroupSearch: &GroupSearch{
 				BaseDN:    fmt.Sprint("cn=groups,dc=example,dc=", j.endUrl),
 				Filter:    "(objectClass=group)",
@@ -220,7 +221,7 @@ func testUpdateConfig(t *testing.T) {
 		assert.Equal(t, config.UserSearch.BaseDN, res.Result.UserSearch.BaseDN)
 		require.NotNil(t, config.GroupSearch)
 		assert.Equal(t, config.GroupSearch.BaseDN, res.Result.GroupSearch.BaseDN)
-
+		assert.Equal(t, config.Organization, res.Result.Organization)
 		for _, v := range j.users {
 			testLogin(t, v.username, v.password, v.username+"@example."+j.endUrl, true)
 		}
