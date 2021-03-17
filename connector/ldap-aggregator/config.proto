@@ -54,7 +54,9 @@ message LdapConfig {
     // in the username/password prompt). If unset, the handler will use
     // "Username".
     string usernamePrompt = 11;
-
+    // Organization will be used to prefix the group with the format org_name::group_name
+    // If this value is empty, it will be set to DN
+    string organization = 15;
 	UserSearch userSearch = 12 [(gorm.field).tag = {embedded: true, embedded_prefix: "user_search_", foreignkey: "-", association_foreignkey: "-"}, (validate.rules).message.required = true];
 
 	GroupSearch groupSearch = 13 [(gorm.field).tag = {embedded: true, embedded_prefix: "group_search_", foreignkey: "-", association_foreignkey: "-"}, (validate.rules).message.required = true];

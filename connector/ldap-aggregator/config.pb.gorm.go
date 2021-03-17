@@ -51,6 +51,7 @@ type LdapConfigORM struct {
 	Id                 string
 	InsecureNoSSL      bool
 	InsecureSkipVerify bool
+	Organization       string
 	RootCA             string
 	RootCAData         []byte
 	StartTLS           bool
@@ -68,6 +69,7 @@ var (
 	LdapConfigIdField                 = "Id"
 	LdapConfigInsecureNoSSLField      = "InsecureNoSSL"
 	LdapConfigInsecureSkipVerifyField = "InsecureSkipVerify"
+	LdapConfigOrganizationField       = "Organization"
 	LdapConfigRootCAField             = "RootCA"
 	LdapConfigRootCADataField         = "RootCAData"
 	LdapConfigStartTLSField           = "StartTLS"
@@ -101,6 +103,7 @@ func (m *LdapConfig) ToORM(ctx context.Context) (LdapConfigORM, error) {
 	to.RootCAData = m.RootCAData
 	to.BindDN = m.BindDN
 	to.UsernamePrompt = m.UsernamePrompt
+	to.Organization = m.Organization
 	if m.GetUserSearch() != nil {
 		tempUserSearch, err := m.GetUserSearch().ToORM(ctx)
 		if err != nil {
@@ -142,6 +145,7 @@ func (m *LdapConfigORM) ToPB(ctx context.Context) (LdapConfig, error) {
 	to.RootCAData = m.RootCAData
 	to.BindDN = m.BindDN
 	to.UsernamePrompt = m.UsernamePrompt
+	to.Organization = m.Organization
 	if m.UserSearch != nil {
 		tempUserSearch, err := m.UserSearch.ToPB(ctx)
 		if err != nil {
@@ -678,6 +682,10 @@ func DefaultApplyFieldMaskLdapConfig(ctx context.Context, patchee *LdapConfig, p
 		}
 		if f == prefix+"UsernamePrompt" {
 			patchee.UsernamePrompt = patcher.UsernamePrompt
+			continue
+		}
+		if f == prefix+"Organization" {
+			patchee.Organization = patcher.Organization
 			continue
 		}
 		if !updatedUserSearch && strings.HasPrefix(f, prefix+"UserSearch.") {

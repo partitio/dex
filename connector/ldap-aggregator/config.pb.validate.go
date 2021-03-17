@@ -74,6 +74,8 @@ func (m *LdapConfig) Validate() error {
 
 	// no validation rules for UsernamePrompt
 
+	// no validation rules for Organization
+
 	if m.GetUserSearch() == nil {
 		return LdapConfigValidationError{
 			field:  "UserSearch",

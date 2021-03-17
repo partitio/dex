@@ -244,7 +244,6 @@ func (c *ldapConnector) identityFromEntry(user ldap.Entry) (ident connector.Iden
 	if ident.UserID = getAttr(user, c.UserSearch.IdAttr); ident.UserID == "" {
 		missing = append(missing, c.UserSearch.IdAttr)
 	}
-
 	// Special case for AD objectGUID which we have to decode
 	if c.UserSearch.IdAttr == "objectGUID" && ident.UserID != "" {
 		var err error
@@ -261,8 +260,9 @@ func (c *ldapConnector) identityFromEntry(user ldap.Entry) (ident connector.Iden
 
 	if c.UserSearch.EmailSuffix != "" {
 		ident.Email = ident.Username + "@" + c.UserSearch.EmailSuffix
+	} else {
+		ident.Email = getAttr(user, c.UserSearch.EmailAttr)
 	}
-	ident.Email = getAttr(user, c.UserSearch.EmailAttr)
 	// TODO(ericchiang): Let this value be set from an attribute.
 	ident.EmailVerified = true
 
@@ -510,7 +510,7 @@ func (c *ldapConnector) groups(ctx context.Context, user ldap.Entry) ([]string, 
 			return nil, fmt.Errorf("ldap: group entity %q missing required attribute %q",
 				group.DN, c.GroupSearch.NameAttr)
 		}
-
+		name = fmt.Sprintf("%s::%s", c.Organization, name)
 		groupNames = append(groupNames, name)
 	}
 	return groupNames, nil
