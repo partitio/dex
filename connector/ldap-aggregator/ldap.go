@@ -509,7 +509,8 @@ func (c *ldapConnector) groups(ctx context.Context, user ldap.Entry) ([]string, 
 		}
 	}
 
-	var groupNames []string
+	// Add the organization as a group
+	groupNames := []string{c.Organization}
 	for _, group := range groups {
 		name := getAttr(*group, c.GroupSearch.NameAttr)
 		if name == "" {
