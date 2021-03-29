@@ -16,6 +16,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/sessions"
 	jose "gopkg.in/square/go-jose.v2"
 
 	"github.com/dexidp/dex/connector"
@@ -27,6 +28,65 @@ const (
 	CodeChallengeMethodPlain = "plain"
 	CodeChallengeMethodS256  = "S256"
 )
+
+func (s *Server) getSession(r *http.Request, authReq storage.AuthRequest) *sessions.Session {
+	session, _ := s.sessionStore.Get(r, authReq.ClientID)
+	return session
+}
+
+func (s *Server) getSessionIdentity(session *sessions.Session, authReq storage.AuthRequest) (connector.Identity, bool) {
+	var identity connector.Identity
+	identityRaw, ok := session.Values["identity"].([]byte)
+	if !ok {
+		return identity, false
+	}
+	err := json.Unmarshal(identityRaw, &identity)
+	if err != nil {
+		return identity, false
+	}
+	return identity, true
+}
+
+func (s *Server) sessionGetScopes(session *sessions.Session) (map[string]bool) {
+	scopesRaw, ok := session.Values["scopes"].([]byte)
+	if ok {
+		var scopes map[string]bool
+		err := json.Unmarshal(scopesRaw, &scopes)
+		if err == nil {
+			return scopes
+		}
+	}
+	return make(map[string]bool)
+}
+
+func (s *Server) sessionScopesApproved(session *sessions.Session, authReq storage.AuthRequest) (bool) {
+	// check all scopes are approved in the session
+	scopes := s.sessionGetScopes(session)
+	for _, wantedScope := range authReq.Scopes {
+		_, ok := scopes[wantedScope]
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) authenticateSession(w http.ResponseWriter, r *http.Request, authReq storage.AuthRequest)  {
+	// add scopes of the request to session scopes after approval
+	session := s.getSession(r, authReq)
+	scopes := s.sessionGetScopes(session)
+	for _, wantedScope := range authReq.Scopes {
+		scopes[wantedScope] = true
+	}
+	var err error
+	session.Values["scopes"], err = json.Marshal(scopes)
+	if err != nil {
+		s.logger.Errorf("failed to marshal scopes: %v", err)
+	} else {
+		session.Save(r, w)
+	}
+}
+
 
 func (s *Server) handlePublicKeys(w http.ResponseWriter, r *http.Request) {
 	// TODO(ericchiang): Cache this.
@@ -258,8 +318,37 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 			}
 			http.Redirect(w, r, callbackURL, http.StatusFound)
 		case connector.PasswordConnector:
-			if err := s.templates.password(r, w, r.URL.String(), "", usernamePrompt(conn), false, showBacklink); err != nil {
-				s.logger.Errorf("Server template error: %v", err)
+			session := s.getSession(r, authReq)
+			identity, idFound := s.getSessionIdentity(session, authReq)
+
+			if !idFound {
+				// no session id, do password request
+				if err := s.templates.password(r, w, r.URL.String(), "", usernamePrompt(conn), false, showBacklink); err != nil {
+					s.logger.Errorf("Server template error: %v", err)
+					s.renderError(r, w, http.StatusInternalServerError, "Login error.")
+					return
+				}
+			} else {
+				// session id found skip the password prompt
+				redirectURL, err := s.finalizeLogin(identity, authReq, conn)
+				if err != nil {
+					s.logger.Errorf("Failed to finalize login: %v", err)
+					s.renderError(r, w, http.StatusInternalServerError, "Login error.")
+					return
+				}
+				// if all scopes are approved end, else ask for approval for new scopes
+				authenticated := s.sessionScopesApproved(session, authReq)
+				if authenticated {
+					authReq, err := s.storage.GetAuthRequest(r.FormValue("req"))
+					if err != nil {
+						s.logger.Errorf("Failed to get updated request: %v", err)
+					} else {
+						s.sendCodeResponse(w, r, authReq)
+						return
+					}
+				} else {
+					http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+				}
 			}
 		case connector.SAMLConnector:
 			action, value, err := conn.POSTData(scopes, authReqID)
@@ -317,7 +406,14 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 			s.renderError(r, w, http.StatusInternalServerError, "Login error.")
 			return
 		}
-
+		// store identity in session
+		session := s.getSession(r, authReq)
+		session.Values["identity"], err = json.Marshal(identity)
+		if err != nil {
+			s.logger.Errorf("failed to marshal identity: %v", err)
+		} else {
+			session.Save(r, w)
+		}
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 	default:
 		s.renderError(r, w, http.StatusBadRequest, "Unsupported request method.")
@@ -494,6 +590,7 @@ func (s *Server) handleApproval(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if s.skipApproval {
+			s.authenticateSession(w, r, authReq)
 			s.sendCodeResponse(w, r, authReq)
 			return
 		}
@@ -511,6 +608,7 @@ func (s *Server) handleApproval(w http.ResponseWriter, r *http.Request) {
 			s.renderError(r, w, http.StatusInternalServerError, "Approval rejected.")
 			return
 		}
+		s.authenticateSession(w, r, authReq)
 		s.sendCodeResponse(w, r, authReq)
 	}
 }

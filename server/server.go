@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gorilla/securecookie"
+	"github.com/gorilla/sessions"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -142,7 +145,8 @@ type Server struct {
 
 	storage storage.Storage
 
-	mux http.Handler
+	mux          http.Handler
+	sessionStore *sessions.CookieStore
 
 	templates *templates
 
@@ -223,11 +227,33 @@ func newServer(ctx context.Context, c Config, rotationStrategy rotationStrategy)
 		now = time.Now
 	}
 
+	authKey := []byte(os.Getenv("DEX_SESSION_AUTHKEY"))
+	if len(authKey) == 0 {
+		authKey = securecookie.GenerateRandomKey(32)
+	}
+	encKey := []byte(os.Getenv("DEX_SESSION_ENCKEY"))
+	if len(encKey) == 0 {
+		encKey = securecookie.GenerateRandomKey(32)
+	}
+	sessionStore := sessions.NewCookieStore(authKey, encKey)
+	maxageEnv := os.Getenv("DEX_SESSION_MAXAGE_SECONDS")
+	if len(maxageEnv) > 0 {
+		maxage, err := strconv.Atoi(maxageEnv)
+		if err != nil {
+			return nil, fmt.Errorf("server: failed to load web static: %v", err)
+		}
+		sessionStore.MaxAge(maxage)
+	}
+	sessionStore.Options.Secure = true
+	sessionStore.Options.SameSite = http.SameSiteStrictMode
+	sessionStore.Options.HttpOnly = true
+
 	s := &Server{
 		issuerURL:              *issuerURL,
 		connectors:             make(map[string]Connector),
 		storage:                newKeyCacher(c.Storage, now),
 		supportedResponseTypes: supported,
+		sessionStore:           sessionStore,
 		idTokensValidFor:       value(c.IDTokensValidFor, 24*time.Hour),
 		authRequestsValidFor:   value(c.AuthRequestsValidFor, 24*time.Hour),
 		deviceRequestsValidFor: value(c.DeviceRequestsValidFor, 5*time.Minute),
