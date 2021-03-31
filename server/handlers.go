@@ -47,31 +47,28 @@ func (s *Server) getSessionIdentity(session *sessions.Session, authReq storage.A
 	return identity, true
 }
 
-func (s *Server) sessionGetScopes(session *sessions.Session) (map[string]bool) {
+func (s *Server) sessionGetScopes(session *sessions.Session) map[string]bool {
+	scopes := make(map[string]bool)
 	scopesRaw, ok := session.Values["scopes"].([]byte)
-	if ok {
-		var scopes map[string]bool
-		err := json.Unmarshal(scopesRaw, &scopes)
-		if err == nil {
-			return scopes
-		}
+	if !ok {
+		return scopes
 	}
-	return make(map[string]bool)
+	json.Unmarshal(scopesRaw, &scopes)
+	return scopes
 }
 
-func (s *Server) sessionScopesApproved(session *sessions.Session, authReq storage.AuthRequest) (bool) {
+func (s *Server) sessionScopesApproved(session *sessions.Session, authReq storage.AuthRequest) bool {
 	// check all scopes are approved in the session
 	scopes := s.sessionGetScopes(session)
 	for _, wantedScope := range authReq.Scopes {
-		_, ok := scopes[wantedScope]
-		if !ok {
+		if _, ok := scopes[wantedScope]; !ok {
 			return false
 		}
 	}
 	return true
 }
 
-func (s *Server) authenticateSession(w http.ResponseWriter, r *http.Request, authReq storage.AuthRequest)  {
+func (s *Server) authenticateSession(w http.ResponseWriter, r *http.Request, authReq storage.AuthRequest) {
 	// add scopes of the request to session scopes after approval
 	session := s.getSession(r, authReq)
 	scopes := s.sessionGetScopes(session)
@@ -79,14 +76,12 @@ func (s *Server) authenticateSession(w http.ResponseWriter, r *http.Request, aut
 		scopes[wantedScope] = true
 	}
 	var err error
-	session.Values["scopes"], err = json.Marshal(scopes)
-	if err != nil {
+	if session.Values["scopes"], err = json.Marshal(scopes); err != nil {
 		s.logger.Errorf("failed to marshal scopes: %v", err)
-	} else {
-		session.Save(r, w)
+		return
 	}
+	session.Save(r, w)
 }
-
 
 func (s *Server) handlePublicKeys(w http.ResponseWriter, r *http.Request) {
 	// TODO(ericchiang): Cache this.
@@ -320,36 +315,36 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 		case connector.PasswordConnector:
 			session := s.getSession(r, authReq)
 			identity, idFound := s.getSessionIdentity(session, authReq)
-
 			if !idFound {
 				// no session id, do password request
 				if err := s.templates.password(r, w, r.URL.String(), "", usernamePrompt(conn), false, showBacklink); err != nil {
 					s.logger.Errorf("Server template error: %v", err)
 					s.renderError(r, w, http.StatusInternalServerError, "Login error.")
-					return
 				}
-			} else {
-				// session id found skip the password prompt
-				redirectURL, err := s.finalizeLogin(identity, authReq, conn)
-				if err != nil {
-					s.logger.Errorf("Failed to finalize login: %v", err)
-					s.renderError(r, w, http.StatusInternalServerError, "Login error.")
-					return
-				}
-				// if all scopes are approved end, else ask for approval for new scopes
-				authenticated := s.sessionScopesApproved(session, authReq)
-				if authenticated {
-					authReq, err := s.storage.GetAuthRequest(r.FormValue("req"))
-					if err != nil {
-						s.logger.Errorf("Failed to get updated request: %v", err)
-					} else {
-						s.sendCodeResponse(w, r, authReq)
-						return
-					}
-				} else {
-					http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-				}
+				return
 			}
+			// session id found skip the password prompt
+			redirectURL, err := s.finalizeLogin(identity, authReq, conn)
+			if err != nil {
+				s.logger.Errorf("Failed to finalize login: %v", err)
+				s.renderError(r, w, http.StatusInternalServerError, "Login error.")
+				return
+			}
+			// if all scopes are approved end, else ask for approval for new scopes
+			authenticated := s.sessionScopesApproved(session, authReq)
+			if !authenticated {
+				http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+				return
+			}
+			authReq, err := s.storage.GetAuthRequest(r.FormValue("req"))
+			if err != nil {
+				s.logger.Errorf("Failed to get updated request: %v", err)
+				s.renderError(r, w, http.StatusInternalServerError, "Login error.")
+				return
+			}
+			s.sendCodeResponse(w, r, authReq)
+			return
+
 		case connector.SAMLConnector:
 			action, value, err := conn.POSTData(scopes, authReqID)
 			if err != nil {
@@ -408,11 +403,10 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		// store identity in session
 		session := s.getSession(r, authReq)
-		session.Values["identity"], err = json.Marshal(identity)
-		if err != nil {
+		if session.Values["identity"], err = json.Marshal(identity); err != nil {
 			s.logger.Errorf("failed to marshal identity: %v", err)
-		} else {
-			session.Save(r, w)
+		} else if err := session.Save(r, w); err != nil {
+			s.logger.Errorf("failed to save identity in session: %v", err)
 		}
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 	default:
