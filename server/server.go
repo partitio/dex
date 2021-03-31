@@ -242,6 +242,7 @@ func newServer(ctx context.Context, c Config, rotationStrategy rotationStrategy)
 		encKey = securecookie.GenerateRandomKey(32)
 	}
 	sessionStore := sessions.NewCookieStore(authKey, encKey)
+	sessionStore.Options.Domain = os.Getenv("DEX_SESSION_DOMAIN")
 	maxageEnv := os.Getenv("DEX_SESSION_MAXAGE_SECONDS")
 	if len(maxageEnv) > 0 {
 		maxage, err := strconv.Atoi(maxageEnv)
