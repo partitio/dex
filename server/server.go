@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gorilla/securecookie"
-	"github.com/gorilla/sessions"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +15,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gorilla/securecookie"
+	"github.com/gorilla/sessions"
 
 	gosundheit "github.com/AppsFlyer/go-sundheit"
 	"github.com/felixge/httpsnoop"
@@ -149,8 +150,9 @@ type Server struct {
 
 	storage storage.Storage
 
-	mux          http.Handler
-	sessionStore *sessions.CookieStore
+	mux                http.Handler
+	sessionStore       *sessions.CookieStore
+	identityCookieName string
 
 	templates *templates
 
@@ -254,13 +256,17 @@ func newServer(ctx context.Context, c Config, rotationStrategy rotationStrategy)
 	sessionStore.Options.Secure = true
 	sessionStore.Options.SameSite = http.SameSiteStrictMode
 	sessionStore.Options.HttpOnly = true
-
+	identityCookieName := os.Getenv("DEX_IDENTITY_COOKIE")
+	if identityCookieName == "" {
+		identityCookieName = "auth_id"
+	}
 	s := &Server{
 		issuerURL:              *issuerURL,
 		connectors:             make(map[string]Connector),
 		storage:                newKeyCacher(c.Storage, now),
 		supportedResponseTypes: supported,
 		sessionStore:           sessionStore,
+		identityCookieName:     identityCookieName,
 		idTokensValidFor:       value(c.IDTokensValidFor, 24*time.Hour),
 		authRequestsValidFor:   value(c.AuthRequestsValidFor, 24*time.Hour),
 		deviceRequestsValidFor: value(c.DeviceRequestsValidFor, 5*time.Minute),
