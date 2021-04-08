@@ -34,6 +34,11 @@ func (s *Server) getSession(r *http.Request, authReq storage.AuthRequest) *sessi
 	return session
 }
 
+func (s *Server) getIdentitySession(r *http.Request, authReq storage.AuthRequest) *sessions.Session {
+	session, _ := s.sessionStore.Get(r, s.identityCookieName)
+	return session
+}
+
 func (s *Server) getSessionIdentity(session *sessions.Session, authReq storage.AuthRequest) (connector.Identity, bool) {
 	var identity connector.Identity
 	identityRaw, ok := session.Values["identity"].([]byte)
@@ -313,8 +318,8 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 			}
 			http.Redirect(w, r, callbackURL, http.StatusFound)
 		case connector.PasswordConnector:
-			session := s.getSession(r, authReq)
-			identity, idFound := s.getSessionIdentity(session, authReq)
+			idSession := s.getIdentitySession(r, authReq)
+			identity, idFound := s.getSessionIdentity(idSession, authReq)
 			if !idFound {
 				// no session id, do password request
 				if err := s.templates.password(r, w, r.URL.String(), "", usernamePrompt(conn), false, showBacklink); err != nil {
@@ -331,6 +336,7 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// if all scopes are approved end, else ask for approval for new scopes
+			session := s.getSession(r, authReq)
 			authenticated := s.sessionScopesApproved(session, authReq)
 			if !authenticated {
 				http.Redirect(w, r, redirectURL, http.StatusSeeOther)
@@ -402,7 +408,7 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// store identity in session
-		session := s.getSession(r, authReq)
+		session := s.getIdentitySession(r, authReq)
 		if session.Values["identity"], err = json.Marshal(identity); err != nil {
 			s.logger.Errorf("failed to marshal identity: %v", err)
 		} else if err := session.Save(r, w); err != nil {

@@ -70,6 +70,7 @@ ENV DEX_SESSION_AUTHKEY=""
 ENV DEX_SESSION_ENCKEY=""
 ENV DEX_SESSION_MAXAGE_SECONDS=""
 ENV DEX_SESSION_DOMAIN=""
+ENV DEX_IDENTITY_COOKIE=""
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["dex", "serve", "/etc/dex/config.docker.yaml"]
