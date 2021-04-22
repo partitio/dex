@@ -534,6 +534,7 @@ func testOfflineSessionCRUD(t *testing.T, s storage.Storage) {
 	session1 := storage.OfflineSessions{
 		UserID:        userID1,
 		ConnID:        "Conn1",
+		SessionID:     "Sess1",
 		Refresh:       make(map[string]*storage.RefreshTokenRef),
 		ConnectorData: []byte(`{"some":"data"}`),
 	}
@@ -552,6 +553,7 @@ func testOfflineSessionCRUD(t *testing.T, s storage.Storage) {
 	session2 := storage.OfflineSessions{
 		UserID:        userID2,
 		ConnID:        "Conn2",
+		SessionID:     "Sess2",
 		Refresh:       make(map[string]*storage.RefreshTokenRef),
 		ConnectorData: []byte(`{"some":"data"}`),
 	}
@@ -560,8 +562,8 @@ func testOfflineSessionCRUD(t *testing.T, s storage.Storage) {
 		t.Fatalf("create offline session with UserID = %s: %v", session2.UserID, err)
 	}
 
-	getAndCompare := func(userID string, connID string, want storage.OfflineSessions) {
-		gr, err := s.GetOfflineSessions(userID, connID)
+	getAndCompare := func(userID string, connID string, sessionID string, want storage.OfflineSessions) {
+		gr, err := s.GetOfflineSessions(userID, connID, sessionID)
 		if err != nil {
 			t.Errorf("get offline session: %v", err)
 			return
@@ -571,35 +573,36 @@ func testOfflineSessionCRUD(t *testing.T, s storage.Storage) {
 		}
 	}
 
-	getAndCompare(userID1, "Conn1", session1)
+	getAndCompare(userID1, "Conn1", "Sess1", session1)
 
 	id := storage.NewID()
 	tokenRef := storage.RefreshTokenRef{
 		ID:        id,
 		ClientID:  "client_id",
+		SessionID: "session_id",
 		CreatedAt: time.Now().UTC().Round(time.Millisecond),
 		LastUsed:  time.Now().UTC().Round(time.Millisecond),
 	}
 	session1.Refresh[tokenRef.ClientID] = &tokenRef
 
-	if err := s.UpdateOfflineSessions(session1.UserID, session1.ConnID, func(old storage.OfflineSessions) (storage.OfflineSessions, error) {
+	if err := s.UpdateOfflineSessions(session1.UserID, session1.ConnID, session1.SessionID, func(old storage.OfflineSessions) (storage.OfflineSessions, error) {
 		old.Refresh[tokenRef.ClientID] = &tokenRef
 		return old, nil
 	}); err != nil {
 		t.Fatalf("failed to update offline session: %v", err)
 	}
 
-	getAndCompare(userID1, "Conn1", session1)
+	getAndCompare(userID1, "Conn1", "Sess1", session1)
 
-	if err := s.DeleteOfflineSessions(session1.UserID, session1.ConnID); err != nil {
+	if err := s.DeleteOfflineSessions(session1.UserID, session1.ConnID, session1.SessionID); err != nil {
 		t.Fatalf("failed to delete offline session: %v", err)
 	}
 
-	if err := s.DeleteOfflineSessions(session2.UserID, session2.ConnID); err != nil {
+	if err := s.DeleteOfflineSessions(session2.UserID, session2.ConnID, session2.SessionID); err != nil {
 		t.Fatalf("failed to delete offline session: %v", err)
 	}
 
-	_, err = s.GetOfflineSessions(session1.UserID, session1.ConnID)
+	_, err = s.GetOfflineSessions(session1.UserID, session1.ConnID, session2.SessionID)
 	mustBeErrNotFound(t, "offline session", err)
 }
 

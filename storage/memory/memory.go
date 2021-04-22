@@ -57,8 +57,9 @@ type memStorage struct {
 }
 
 type offlineSessionID struct {
-	userID string
-	connID string
+	userID    string
+	connID    string
+	sessionID string
 }
 
 func (s *memStorage) tx(f func()) {
@@ -157,8 +158,9 @@ func (s *memStorage) CreatePassword(p storage.Password) (err error) {
 
 func (s *memStorage) CreateOfflineSessions(o storage.OfflineSessions) (err error) {
 	id := offlineSessionID{
-		userID: o.UserID,
-		connID: o.ConnID,
+		userID:    o.UserID,
+		connID:    o.ConnID,
+		sessionID: o.SessionID,
 	}
 	s.tx(func() {
 		if _, ok := s.offlineSessions[id]; ok {
@@ -240,10 +242,11 @@ func (s *memStorage) GetAuthRequest(id string) (req storage.AuthRequest, err err
 	return
 }
 
-func (s *memStorage) GetOfflineSessions(userID string, connID string) (o storage.OfflineSessions, err error) {
+func (s *memStorage) GetOfflineSessions(userID string, connID string, sessionID string) (o storage.OfflineSessions, err error) {
 	id := offlineSessionID{
-		userID: userID,
-		connID: connID,
+		userID:    userID,
+		connID:    connID,
+		sessionID: sessionID,
 	}
 	s.tx(func() {
 		var ok bool
@@ -357,10 +360,11 @@ func (s *memStorage) DeleteAuthRequest(id string) (err error) {
 	return
 }
 
-func (s *memStorage) DeleteOfflineSessions(userID string, connID string) (err error) {
+func (s *memStorage) DeleteOfflineSessions(userID string, connID string, sessionID string) (err error) {
 	id := offlineSessionID{
-		userID: userID,
-		connID: connID,
+		userID:    userID,
+		connID:    connID,
+		sessionID: sessionID,
 	}
 	s.tx(func() {
 		if _, ok := s.offlineSessions[id]; !ok {
@@ -450,10 +454,11 @@ func (s *memStorage) UpdateRefreshToken(id string, updater func(p storage.Refres
 	return
 }
 
-func (s *memStorage) UpdateOfflineSessions(userID string, connID string, updater func(o storage.OfflineSessions) (storage.OfflineSessions, error)) (err error) {
+func (s *memStorage) UpdateOfflineSessions(userID string, connID string, sessionID string, updater func(o storage.OfflineSessions) (storage.OfflineSessions, error)) (err error) {
 	id := offlineSessionID{
-		userID: userID,
-		connID: connID,
+		userID:    userID,
+		connID:    connID,
+		sessionID: sessionID,
 	}
 	s.tx(func() {
 		r, ok := s.offlineSessions[id]

@@ -75,6 +75,10 @@ pre {
 	  <input type="hidden" name="refresh_token" value="{{ .RefreshToken }}">
 	  <input type="submit" value="Redeem refresh token">
     </form>
+	<form action="/logout" method="post">
+	  <input type="hidden" name="id_token_hint" value="{{ .IDToken }}">
+	  <input type="submit" value="Logout">
+    </form>
 	{{ end }}
   </body>
 </html>

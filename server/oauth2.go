@@ -560,6 +560,11 @@ func (s *Server) parseAuthorizationRequest(r *http.Request) (*storage.AuthReques
 		}
 	}
 
+	// TODO(adphi): is it really safe to generate one from Authentication server if not provided ?
+	if nonce == "" {
+		nonce = storage.NewID()
+	}
+
 	return &storage.AuthRequest{
 		ID:                  storage.NewID(),
 		ClientID:            client.ID,

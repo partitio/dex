@@ -281,4 +281,24 @@ var migrations = []migration{
 				add column obsolete_token text default '';`,
 		},
 	},
+	{
+		stmts: []string{
+			`
+			alter table refresh_token
+				add column session_id text default '';`,
+			`
+			create table offline_session_new (
+				user_id text not null,
+				conn_id text not null,
+				session_id text default '',
+				refresh bytea not null,
+				connector_data bytea,
+				PRIMARY KEY (user_id, conn_id, session_id)
+			);`,
+			`insert into offline_session_new (user_id, conn_id, refresh, connector_data)
+				select user_id, conn_id, refresh, connector_data from offline_session;`,
+			`drop table offline_session;`,
+			`alter table offline_session_new rename to offline_session;`,
+		},
+	},
 }

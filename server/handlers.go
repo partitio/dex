@@ -33,12 +33,26 @@ func (s *Server) getSession(r *http.Request, authReq storage.AuthRequest) *sessi
 	return session
 }
 
-func (s *Server) getIdentitySession(r *http.Request, authReq storage.AuthRequest) *sessions.Session {
+func (s *Server) listSessions(r *http.Request) ([]*sessions.Session, error) {
+	clients, err := s.storage.ListClients()
+	if err != nil {
+		return nil, err
+	}
+	var sessions []*sessions.Session
+	for _, client := range clients {
+		if s, err := s.sessionStore.Get(r, client.ID); err == nil {
+			sessions = append(sessions, s)
+		}
+	}
+	return sessions, nil
+}
+
+func (s *Server) getIdentitySession(r *http.Request) *sessions.Session {
 	session, _ := s.sessionStore.Get(r, s.identityCookieName)
 	return session
 }
 
-func (s *Server) getSessionIdentity(session *sessions.Session, authReq storage.AuthRequest) (connector.Identity, bool) {
+func (s *Server) getSessionIdentity(session *sessions.Session) (connector.Identity, bool) {
 	var identity connector.Identity
 	identityRaw, ok := session.Values["identity"].([]byte)
 	if !ok {
@@ -84,6 +98,7 @@ func (s *Server) authenticateSession(w http.ResponseWriter, r *http.Request, aut
 		s.logger.Errorf("failed to marshal scopes: %v", err)
 		return
 	}
+	session.Values["nonce"] = authReq.Nonce
 	session.Save(r, w)
 }
 
@@ -317,8 +332,8 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 			}
 			http.Redirect(w, r, callbackURL, http.StatusFound)
 		case connector.PasswordConnector:
-			idSession := s.getIdentitySession(r, authReq)
-			identity, idFound := s.getSessionIdentity(idSession, authReq)
+			idSession := s.getIdentitySession(r)
+			identity, idFound := s.getSessionIdentity(idSession)
 			if !idFound {
 				// no session id, do password request
 				if err := s.templates.password(r, w, r.URL.String(), "", usernamePrompt(conn), false, showBacklink); err != nil {
@@ -327,8 +342,12 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 				}
 				return
 			}
+			sessionID := ""
+			if v, ok := idSession.Values["session_id"]; ok {
+				sessionID = v.(string)
+			}
 			// session id found skip the password prompt
-			redirectURL, err := s.finalizeLogin(identity, authReq, conn)
+			redirectURL, err := s.finalizeLogin(identity, authReq, conn, sessionID)
 			if err != nil {
 				s.logger.Errorf("Failed to finalize login: %v", err)
 				s.renderError(r, w, http.StatusInternalServerError, "Login error.")
@@ -400,14 +419,16 @@ func (s *Server) handleConnectorLogin(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		redirectURL, err := s.finalizeLogin(identity, authReq, conn.Connector)
+		sessionID := storage.NewID()
+		redirectURL, err := s.finalizeLogin(identity, authReq, conn.Connector, sessionID)
 		if err != nil {
 			s.logger.Errorf("Failed to finalize login: %v", err)
 			s.renderError(r, w, http.StatusInternalServerError, "Login error.")
 			return
 		}
 		// store identity in session
-		session := s.getIdentitySession(r, authReq)
+		session := s.getIdentitySession(r)
+		session.Values["session_id"] = sessionID
 		if session.Values["identity"], err = json.Marshal(identity); err != nil {
 			s.logger.Errorf("failed to marshal identity: %v", err)
 		} else if err := session.Save(r, w); err != nil {
@@ -488,8 +509,8 @@ func (s *Server) handleConnectorCallback(w http.ResponseWriter, r *http.Request)
 		s.renderError(r, w, http.StatusInternalServerError, fmt.Sprintf("Failed to authenticate: %v", err))
 		return
 	}
-
-	redirectURL, err := s.finalizeLogin(identity, authReq, conn.Connector)
+	// TODO(adphi): how to handle the session ID ?
+	redirectURL, err := s.finalizeLogin(identity, authReq, conn.Connector, "")
 	if err != nil {
 		s.logger.Errorf("Failed to finalize login: %v", err)
 		s.renderError(r, w, http.StatusInternalServerError, "Login error.")
@@ -501,7 +522,7 @@ func (s *Server) handleConnectorCallback(w http.ResponseWriter, r *http.Request)
 
 // finalizeLogin associates the user's identity with the current AuthRequest, then returns
 // the approval page's path.
-func (s *Server) finalizeLogin(identity connector.Identity, authReq storage.AuthRequest, conn connector.Connector) (string, error) {
+func (s *Server) finalizeLogin(identity connector.Identity, authReq storage.AuthRequest, conn connector.Connector, sessionID string) (string, error) {
 	claims := storage.Claims{
 		UserID:            identity.UserID,
 		Username:          identity.Username,
@@ -536,7 +557,7 @@ func (s *Server) finalizeLogin(identity connector.Identity, authReq storage.Auth
 	}
 
 	// Try to retrieve an existing OfflineSession object for the corresponding user.
-	session, err := s.storage.GetOfflineSessions(identity.UserID, authReq.ConnectorID)
+	session, err := s.storage.GetOfflineSessions(identity.UserID, authReq.ConnectorID, sessionID)
 	if err != nil {
 		if err != storage.ErrNotFound {
 			s.logger.Errorf("failed to get offline session: %v", err)
@@ -545,6 +566,7 @@ func (s *Server) finalizeLogin(identity connector.Identity, authReq storage.Auth
 		offlineSessions := storage.OfflineSessions{
 			UserID:        identity.UserID,
 			ConnID:        authReq.ConnectorID,
+			SessionID:     sessionID,
 			Refresh:       make(map[string]*storage.RefreshTokenRef),
 			ConnectorData: identity.ConnectorData,
 		}
@@ -560,7 +582,7 @@ func (s *Server) finalizeLogin(identity connector.Identity, authReq storage.Auth
 	}
 
 	// Update existing OfflineSession obj with new RefreshTokenRef.
-	if err := s.storage.UpdateOfflineSessions(session.UserID, session.ConnID, func(old storage.OfflineSessions) (storage.OfflineSessions, error) {
+	if err := s.storage.UpdateOfflineSessions(session.UserID, session.ConnID, sessionID, func(old storage.OfflineSessions) (storage.OfflineSessions, error) {
 		if len(identity.ConnectorData) > 0 {
 			old.ConnectorData = identity.ConnectorData
 		}
@@ -571,6 +593,128 @@ func (s *Server) finalizeLogin(identity connector.Identity, authReq storage.Auth
 	}
 
 	return returnURL, nil
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	var nonce string
+	rawIDToken := r.URL.Query().Get("id_token_hint")
+	if rawIDToken != "" {
+		verifier := oidc.NewVerifier(s.issuerURL.String(), &storageKeySet{s.storage}, &oidc.Config{SkipClientIDCheck: true})
+		idToken, err := verifier.Verify(r.Context(), rawIDToken)
+		if err != nil {
+			s.tokenErrHelper(w, errAccessDenied, err.Error(), http.StatusForbidden)
+			return
+		}
+		nonce = idToken.Nonce
+	}
+	if nonce != "" {
+		s.handleClientLogout(w, r, nonce)
+	} else {
+		s.handleGlobalLogout(w, r)
+	}
+}
+
+func (s *Server) handleClientLogout(w http.ResponseWriter, r *http.Request, nonce string) {
+	if nonce == "" {
+		return
+	}
+	refreshTokens, err := s.storage.ListRefreshTokens()
+	if err != nil {
+		s.renderError(r, w, http.StatusInternalServerError, fmt.Sprintf("Database failed: %v", err))
+		return
+	}
+	for _, v := range refreshTokens {
+		if v.Nonce != nonce {
+			continue
+		}
+		if err := s.storage.DeleteRefresh(v.ID); err != nil {
+			s.logger.Errorf("failed to delete refresh token: %v", err)
+			s.renderError(r, w, http.StatusInternalServerError, fmt.Sprintf("Database failed: %v", err))
+			return
+		}
+		if err := s.storage.DeleteOfflineSessions(v.Claims.UserID, v.ConnectorID, v.SessionID); err != nil {
+			s.logger.Errorf("failed to delete offline session: %v", err)
+			s.renderError(r, w, http.StatusInternalServerError, fmt.Sprintf("Database failed: %v", err))
+		}
+	}
+
+	sessions, err := s.listSessions(r)
+	if err != nil {
+		s.logger.Errorf("failed to list session cookies: %v", err)
+	}
+	for _, session := range sessions {
+		if v, ok := session.Values["nonce"]; ok && v.(string) == nonce {
+			s.deleteSession(w, r, session)
+		}
+	}
+	if url := r.URL.Query().Get("post_logout_redirect_uri"); url != "" {
+		http.Redirect(w, r, url, http.StatusSeeOther)
+		return
+	}
+	// use error template to display successful logout
+	s.renderError(r, w, http.StatusOK, "You've been successfully logged out.")
+}
+
+func (s *Server) handleGlobalLogout(w http.ResponseWriter, r *http.Request) {
+	idSession := s.getIdentitySession(r)
+	var sessionID string
+	if v, ok := idSession.Values["session_id"]; !ok {
+		s.logger.Error("failed to retrieve session_id in identity cookie")
+	} else {
+		sessionID = v.(string)
+	}
+	identity := &connector.Identity{}
+	var err error
+	if v, ok := idSession.Values["identity"]; ok {
+		if err = json.Unmarshal(v.([]byte), identity); err != nil {
+			identity = nil
+			s.logger.Errorf("failed to unmarshall identity: %v", err)
+			s.renderError(r, w, http.StatusUnauthorized, "Unauthorized")
+			return
+		}
+	} else {
+		identity = nil
+		s.logger.Error("failed to retrieve identity in identity cookie")
+	}
+	if sessionID == "" && identity == nil {
+		s.renderError(r, w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	sessions, err := s.listSessions(r)
+	if err != nil {
+		s.renderError(r, w, http.StatusInternalServerError, fmt.Sprintf("Database failed: %v", err))
+		return
+	}
+	refreshTokens, err := s.storage.ListRefreshTokens()
+	if err != nil {
+		s.renderError(r, w, http.StatusInternalServerError, fmt.Sprintf("Database failed: %v", err))
+		return
+	}
+	for _, refresh := range refreshTokens {
+		if refresh.SessionID != sessionID || (sessionID == "" && identity != nil && identity.UserID != refresh.Claims.UserID) {
+			continue
+		}
+		if err := s.storage.DeleteRefresh(refresh.ID); err != nil {
+			s.logger.Errorf("failed to delete refresh token: %v", err)
+			s.renderError(r, w, http.StatusInternalServerError, fmt.Sprintf("Database failed: %v", err))
+			return
+		}
+		if err := s.storage.DeleteOfflineSessions(refresh.Claims.UserID, refresh.ConnectorID, refresh.SessionID); err != nil {
+			s.logger.Errorf("failed to delete offline session: %v", err)
+			s.renderError(r, w, http.StatusInternalServerError, fmt.Sprintf("Database failed: %v", err))
+			return
+		}
+	}
+	for _, session := range sessions {
+		s.deleteSession(w, r, session)
+	}
+	s.deleteSession(w, r, s.getIdentitySession(r))
+	if url := r.URL.Query().Get("post_logout_redirect_uri"); url != "" {
+		http.Redirect(w, r, url, http.StatusSeeOther)
+		return
+	}
+	// use error template to display successful logout
+	s.renderError(r, w, http.StatusOK, "You've been successfully logged out.")
 }
 
 func (s *Server) handleApproval(w http.ResponseWriter, r *http.Request) {
@@ -920,6 +1064,7 @@ func (s *Server) exchangeAuthCode(w http.ResponseWriter, authCode storage.AuthCo
 		refresh := storage.RefreshToken{
 			ID:            storage.NewID(),
 			Token:         storage.NewID(),
+			SessionID:     storage.NewID(),
 			ClientID:      authCode.ClientID,
 			ConnectorID:   authCode.ConnectorID,
 			Scopes:        authCode.Scopes,
@@ -932,6 +1077,7 @@ func (s *Server) exchangeAuthCode(w http.ResponseWriter, authCode storage.AuthCo
 		token := &internal.RefreshToken{
 			RefreshId: refresh.ID,
 			Token:     refresh.Token,
+			SessionId: refresh.SessionID,
 		}
 		if refreshToken, err = internal.Marshal(token); err != nil {
 			s.logger.Errorf("failed to marshal refresh token: %v", err)
@@ -963,12 +1109,13 @@ func (s *Server) exchangeAuthCode(w http.ResponseWriter, authCode storage.AuthCo
 		tokenRef := storage.RefreshTokenRef{
 			ID:        refresh.ID,
 			ClientID:  refresh.ClientID,
+			SessionID: refresh.SessionID,
 			CreatedAt: refresh.CreatedAt,
 			LastUsed:  refresh.LastUsed,
 		}
 
 		// Try to retrieve an existing OfflineSession object for the corresponding user.
-		if session, err := s.storage.GetOfflineSessions(refresh.Claims.UserID, refresh.ConnectorID); err != nil {
+		if session, err := s.storage.GetOfflineSessions(refresh.Claims.UserID, refresh.ConnectorID, refresh.SessionID); err != nil {
 			if err != storage.ErrNotFound {
 				s.logger.Errorf("failed to get offline session: %v", err)
 				s.tokenErrHelper(w, errServerError, "", http.StatusInternalServerError)
@@ -976,9 +1123,10 @@ func (s *Server) exchangeAuthCode(w http.ResponseWriter, authCode storage.AuthCo
 				return nil, err
 			}
 			offlineSessions := storage.OfflineSessions{
-				UserID:  refresh.Claims.UserID,
-				ConnID:  refresh.ConnectorID,
-				Refresh: make(map[string]*storage.RefreshTokenRef),
+				UserID:    refresh.Claims.UserID,
+				ConnID:    refresh.ConnectorID,
+				SessionID: refresh.SessionID,
+				Refresh:   make(map[string]*storage.RefreshTokenRef),
 			}
 			offlineSessions.Refresh[tokenRef.ClientID] = &tokenRef
 
@@ -1002,7 +1150,7 @@ func (s *Server) exchangeAuthCode(w http.ResponseWriter, authCode storage.AuthCo
 			}
 
 			// Update existing OfflineSession obj with new RefreshTokenRef.
-			if err := s.storage.UpdateOfflineSessions(session.UserID, session.ConnID, func(old storage.OfflineSessions) (storage.OfflineSessions, error) {
+			if err := s.storage.UpdateOfflineSessions(session.UserID, session.ConnID, session.SessionID, func(old storage.OfflineSessions) (storage.OfflineSessions, error) {
 				old.Refresh[tokenRef.ClientID] = &tokenRef
 				return old, nil
 			}); err != nil {
@@ -1162,6 +1310,7 @@ func (s *Server) handlePasswordGrant(w http.ResponseWriter, r *http.Request, cli
 	if reqRefresh {
 		refresh := storage.RefreshToken{
 			ID:          storage.NewID(),
+			SessionID:   storage.NewID(),
 			Token:       storage.NewID(),
 			ClientID:    client.ID,
 			ConnectorID: connID,
@@ -1175,6 +1324,7 @@ func (s *Server) handlePasswordGrant(w http.ResponseWriter, r *http.Request, cli
 		token := &internal.RefreshToken{
 			RefreshId: refresh.ID,
 			Token:     refresh.Token,
+			SessionId: refresh.SessionID,
 		}
 		if refreshToken, err = internal.Marshal(token); err != nil {
 			s.logger.Errorf("failed to marshal refresh token: %v", err)
@@ -1205,13 +1355,14 @@ func (s *Server) handlePasswordGrant(w http.ResponseWriter, r *http.Request, cli
 
 		tokenRef := storage.RefreshTokenRef{
 			ID:        refresh.ID,
+			SessionID: refresh.SessionID,
 			ClientID:  refresh.ClientID,
 			CreatedAt: refresh.CreatedAt,
 			LastUsed:  refresh.LastUsed,
 		}
 
 		// Try to retrieve an existing OfflineSession object for the corresponding user.
-		if session, err := s.storage.GetOfflineSessions(refresh.Claims.UserID, refresh.ConnectorID); err != nil {
+		if session, err := s.storage.GetOfflineSessions(refresh.Claims.UserID, refresh.ConnectorID, refresh.SessionID); err != nil {
 			if err != storage.ErrNotFound {
 				s.logger.Errorf("failed to get offline session: %v", err)
 				s.tokenErrHelper(w, errServerError, "", http.StatusInternalServerError)
@@ -1219,9 +1370,10 @@ func (s *Server) handlePasswordGrant(w http.ResponseWriter, r *http.Request, cli
 				return
 			}
 			offlineSessions := storage.OfflineSessions{
-				UserID:  refresh.Claims.UserID,
-				ConnID:  refresh.ConnectorID,
-				Refresh: make(map[string]*storage.RefreshTokenRef),
+				UserID:    refresh.Claims.UserID,
+				ConnID:    refresh.ConnectorID,
+				SessionID: refresh.SessionID,
+				Refresh:   make(map[string]*storage.RefreshTokenRef),
 			}
 			offlineSessions.Refresh[tokenRef.ClientID] = &tokenRef
 
@@ -1249,7 +1401,7 @@ func (s *Server) handlePasswordGrant(w http.ResponseWriter, r *http.Request, cli
 			}
 
 			// Update existing OfflineSession obj with new RefreshTokenRef.
-			if err := s.storage.UpdateOfflineSessions(session.UserID, session.ConnID, func(old storage.OfflineSessions) (storage.OfflineSessions, error) {
+			if err := s.storage.UpdateOfflineSessions(session.UserID, session.ConnID, session.SessionID, func(old storage.OfflineSessions) (storage.OfflineSessions, error) {
 				old.Refresh[tokenRef.ClientID] = &tokenRef
 				return old, nil
 			}); err != nil {
@@ -1317,4 +1469,15 @@ func usernamePrompt(conn connector.PasswordConnector) string {
 		return attr
 	}
 	return "Username"
+}
+
+func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request, session *sessions.Session) {
+	if session == nil {
+		return
+	}
+	session.Values = nil
+	session.Options.MaxAge = -1
+	if err := session.Save(r, w); err != nil {
+		s.logger.Errorf("failed to delete session: %v", err)
+	}
 }

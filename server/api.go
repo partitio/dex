@@ -38,6 +38,7 @@ func NewAPI(s storage.Storage, logger log.Logger) api.DexServer {
 }
 
 type dexAPI struct {
+	api.UnimplementedDexServer
 	s      storage.Storage
 	logger log.Logger
 }
@@ -286,7 +287,7 @@ func (d dexAPI) ListRefresh(ctx context.Context, req *api.ListRefreshReq) (*api.
 		return nil, err
 	}
 
-	offlineSessions, err := d.s.GetOfflineSessions(id.UserId, id.ConnId)
+	offlineSessions, err := d.s.GetOfflineSessions(id.UserId, id.ConnId, id.SessionId)
 	if err != nil {
 		if err == storage.ErrNotFound {
 			// This means that this user-client pair does not have a refresh token yet.
@@ -340,7 +341,7 @@ func (d dexAPI) RevokeRefresh(ctx context.Context, req *api.RevokeRefreshReq) (*
 		return old, nil
 	}
 
-	if err := d.s.UpdateOfflineSessions(id.UserId, id.ConnId, updater); err != nil {
+	if err := d.s.UpdateOfflineSessions(id.UserId, id.ConnId, id.SessionId, updater); err != nil {
 		if err == storage.ErrNotFound {
 			return &api.RevokeRefreshResp{NotFound: true}, nil
 		}

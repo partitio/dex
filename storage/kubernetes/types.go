@@ -493,8 +493,9 @@ type RefreshToken struct {
 	CreatedAt time.Time
 	LastUsed  time.Time
 
-	ClientID string   `json:"clientID"`
-	Scopes   []string `json:"scopes,omitempty"`
+	ClientID  string   `json:"clientID"`
+	SessionID string   `json:"sessionID"`
+	Scopes    []string `json:"scopes,omitempty"`
 
 	Token         string `json:"token,omitempty"`
 	ObsoleteToken string `json:"obsoleteToken,omitempty"`
@@ -521,6 +522,7 @@ func toStorageRefreshToken(r RefreshToken) storage.RefreshToken {
 		CreatedAt:     r.CreatedAt,
 		LastUsed:      r.LastUsed,
 		ClientID:      r.ClientID,
+		SessionID:     r.SessionID,
 		ConnectorID:   r.ConnectorID,
 		ConnectorData: r.ConnectorData,
 		Scopes:        r.Scopes,
@@ -544,6 +546,7 @@ func (cli *client) fromStorageRefreshToken(r storage.RefreshToken) RefreshToken 
 		CreatedAt:     r.CreatedAt,
 		LastUsed:      r.LastUsed,
 		ClientID:      r.ClientID,
+		SessionID:     r.SessionID,
 		ConnectorID:   r.ConnectorID,
 		ConnectorData: r.ConnectorData,
 		Scopes:        r.Scopes,
@@ -605,6 +608,7 @@ type OfflineSessions struct {
 
 	UserID        string                              `json:"userID,omitempty"`
 	ConnID        string                              `json:"connID,omitempty"`
+	SessionID     string                              `json:"SessionID"`
 	Refresh       map[string]*storage.RefreshTokenRef `json:"refresh,omitempty"`
 	ConnectorData []byte                              `json:"connectorData,omitempty"`
 }
@@ -621,6 +625,7 @@ func (cli *client) fromStorageOfflineSessions(o storage.OfflineSessions) Offline
 		},
 		UserID:        o.UserID,
 		ConnID:        o.ConnID,
+		SessionID:     o.SessionID,
 		Refresh:       o.Refresh,
 		ConnectorData: o.ConnectorData,
 	}
@@ -630,6 +635,7 @@ func toStorageOfflineSessions(o OfflineSessions) storage.OfflineSessions {
 	s := storage.OfflineSessions{
 		UserID:        o.UserID,
 		ConnID:        o.ConnID,
+		SessionID:     o.SessionID,
 		Refresh:       o.Refresh,
 		ConnectorData: o.ConnectorData,
 	}

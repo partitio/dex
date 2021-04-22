@@ -7,6 +7,7 @@ package internal;
 message RefreshToken {
   string refresh_id = 1;
   string token = 2;
+  string session_id = 3;
 }
 
 // IDTokenSubject represents both the userID and connID which is returned
@@ -14,4 +15,5 @@ message RefreshToken {
 message IDTokenSubject {
   string user_id = 1;
   string conn_id = 2;
+  string session_id = 3;
 }

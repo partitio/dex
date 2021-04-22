@@ -140,7 +140,7 @@ func (s *Server) getRefreshScopes(r *http.Request, refresh *storage.RefreshToken
 func (s *Server) refreshWithConnector(ctx context.Context, token *internal.RefreshToken, refresh *storage.RefreshToken, scopes []string) (connector.Identity, *refreshError) {
 	var connectorData []byte
 
-	session, err := s.storage.GetOfflineSessions(refresh.Claims.UserID, refresh.ConnectorID)
+	session, err := s.storage.GetOfflineSessions(refresh.Claims.UserID, refresh.ConnectorID, refresh.SessionID)
 	switch {
 	case err != nil:
 		if err != storage.ErrNotFound {
@@ -206,7 +206,7 @@ func (s *Server) updateOfflineSession(refresh *storage.RefreshToken, ident conne
 
 	// Update LastUsed time stamp in refresh token reference object
 	// in offline session for the user.
-	err := s.storage.UpdateOfflineSessions(refresh.Claims.UserID, refresh.ConnectorID, offlineSessionUpdater)
+	err := s.storage.UpdateOfflineSessions(refresh.Claims.UserID, refresh.ConnectorID, refresh.SessionID, offlineSessionUpdater)
 	if err != nil {
 		s.logger.Errorf("failed to update offline session: %v", err)
 		return newInternalServerError()
@@ -221,6 +221,7 @@ func (s *Server) updateRefreshToken(token *internal.RefreshToken, refresh *stora
 	if s.refreshTokenPolicy.RotationEnabled() {
 		newToken = &internal.RefreshToken{
 			RefreshId: refresh.ID,
+			SessionId: refresh.SessionID,
 			Token:     storage.NewID(),
 		}
 	}

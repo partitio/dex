@@ -88,7 +88,7 @@ type Storage interface {
 	GetKeys() (Keys, error)
 	GetRefresh(id string) (RefreshToken, error)
 	GetPassword(email string) (Password, error)
-	GetOfflineSessions(userID string, connID string) (OfflineSessions, error)
+	GetOfflineSessions(userID string, connID string, sessionID string) (OfflineSessions, error)
 	GetConnector(id string) (Connector, error)
 	GetDeviceRequest(userCode string) (DeviceRequest, error)
 	GetDeviceToken(deviceCode string) (DeviceToken, error)
@@ -104,7 +104,7 @@ type Storage interface {
 	DeleteClient(id string) error
 	DeleteRefresh(id string) error
 	DeletePassword(email string) error
-	DeleteOfflineSessions(userID string, connID string) error
+	DeleteOfflineSessions(userID string, connID string, sessionID string) error
 	DeleteConnector(id string) error
 
 	// Update methods take a function for updating an object then performs that update within
@@ -126,7 +126,7 @@ type Storage interface {
 	UpdateAuthRequest(id string, updater func(a AuthRequest) (AuthRequest, error)) error
 	UpdateRefreshToken(id string, updater func(r RefreshToken) (RefreshToken, error)) error
 	UpdatePassword(email string, updater func(p Password) (Password, error)) error
-	UpdateOfflineSessions(userID string, connID string, updater func(s OfflineSessions) (OfflineSessions, error)) error
+	UpdateOfflineSessions(userID string, connID string, sessionID string, updater func(s OfflineSessions) (OfflineSessions, error)) error
 	UpdateConnector(id string, updater func(c Connector) (Connector, error)) error
 	UpdateDeviceToken(deviceCode string, updater func(t DeviceToken) (DeviceToken, error)) error
 
@@ -268,6 +268,9 @@ type AuthCode struct {
 type RefreshToken struct {
 	ID string
 
+	// Session is the session ID used to logout and delete refresh tokens
+	SessionID string
+
 	// A single token that's rotated every time the refresh token is refreshed.
 	//
 	// May be empty.
@@ -299,6 +302,9 @@ type RefreshToken struct {
 type RefreshTokenRef struct {
 	ID string
 
+	// Session is the session ID used to logout and delete refresh tokens
+	SessionID string
+
 	// Client the refresh token is valid for.
 	ClientID string
 
@@ -313,6 +319,9 @@ type OfflineSessions struct {
 
 	// The ID of the connector used to login the user.
 	ConnID string
+
+	// Session is the session ID used to logout and delete refresh tokens
+	SessionID string
 
 	// Refresh is a hash table of refresh token reference objects
 	// indexed by the ClientID of the refresh token.

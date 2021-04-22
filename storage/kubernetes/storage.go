@@ -328,20 +328,20 @@ func (cli *client) getRefreshToken(id string) (r RefreshToken, err error) {
 	return
 }
 
-func (cli *client) GetOfflineSessions(userID string, connID string) (storage.OfflineSessions, error) {
-	o, err := cli.getOfflineSessions(userID, connID)
+func (cli *client) GetOfflineSessions(userID string, connID string, sessionID string) (storage.OfflineSessions, error) {
+	o, err := cli.getOfflineSessions(userID, connID, sessionID)
 	if err != nil {
 		return storage.OfflineSessions{}, err
 	}
 	return toStorageOfflineSessions(o), nil
 }
 
-func (cli *client) getOfflineSessions(userID string, connID string) (o OfflineSessions, err error) {
+func (cli *client) getOfflineSessions(userID string, connID string, sessionID string) (o OfflineSessions, err error) {
 	name := cli.offlineTokenName(userID, connID)
 	if err = cli.get(resourceOfflineSessions, name, &o); err != nil {
 		return OfflineSessions{}, err
 	}
-	if userID != o.UserID || connID != o.ConnID {
+	if userID != o.UserID || connID != o.ConnID || sessionID != o.SessionID {
 		return OfflineSessions{}, fmt.Errorf("get offline session: wrong session retrieved")
 	}
 	return o, nil
@@ -426,9 +426,9 @@ func (cli *client) DeletePassword(email string) error {
 	return cli.delete(resourcePassword, p.ObjectMeta.Name)
 }
 
-func (cli *client) DeleteOfflineSessions(userID string, connID string) error {
+func (cli *client) DeleteOfflineSessions(userID string, connID string, sessionID string) error {
 	// Check for hash collision.
-	o, err := cli.getOfflineSessions(userID, connID)
+	o, err := cli.getOfflineSessions(userID, connID, sessionID)
 	if err != nil {
 		return err
 	}
@@ -491,9 +491,9 @@ func (cli *client) UpdatePassword(email string, updater func(old storage.Passwor
 	return cli.put(resourcePassword, p.ObjectMeta.Name, newPassword)
 }
 
-func (cli *client) UpdateOfflineSessions(userID string, connID string, updater func(old storage.OfflineSessions) (storage.OfflineSessions, error)) error {
+func (cli *client) UpdateOfflineSessions(userID string, connID string, sessionID string, updater func(old storage.OfflineSessions) (storage.OfflineSessions, error)) error {
 	return retryOnConflict(context.TODO(), func() error {
-		o, err := cli.getOfflineSessions(userID, connID)
+		o, err := cli.getOfflineSessions(userID, connID, sessionID)
 		if err != nil {
 			return err
 		}

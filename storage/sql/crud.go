@@ -281,15 +281,15 @@ func (c *conn) GetAuthCode(id string) (a storage.AuthCode, err error) {
 func (c *conn) CreateRefresh(r storage.RefreshToken) error {
 	_, err := c.Exec(`
 		insert into refresh_token (
-			id, client_id, scopes, nonce,
+			id, client_id, session_id, scopes, nonce,
 			claims_user_id, claims_username, claims_preferred_username,
 			claims_email, claims_email_verified, claims_groups,
 			connector_id, connector_data,
 			token, obsolete_token, created_at, last_used
 		)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16);
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17);
 	`,
-		r.ID, r.ClientID, encoder(r.Scopes), r.Nonce,
+		r.ID, r.ClientID, r.SessionID, encoder(r.Scopes), r.Nonce,
 		r.Claims.UserID, r.Claims.Username, r.Claims.PreferredUsername,
 		r.Claims.Email, r.Claims.EmailVerified,
 		encoder(r.Claims.Groups),
@@ -331,16 +331,17 @@ func (c *conn) UpdateRefreshToken(id string, updater func(old storage.RefreshTok
 				token = $12,
                 obsolete_token = $13,
 				created_at = $14,
-				last_used = $15
+				last_used = $15,
+				session_id = $16
 			where
-				id = $16
+				id = $17
 		`,
 			r.ClientID, encoder(r.Scopes), r.Nonce,
 			r.Claims.UserID, r.Claims.Username, r.Claims.PreferredUsername,
 			r.Claims.Email, r.Claims.EmailVerified,
 			encoder(r.Claims.Groups),
 			r.ConnectorID, r.ConnectorData,
-			r.Token, r.ObsoleteToken, r.CreatedAt, r.LastUsed, id,
+			r.Token, r.ObsoleteToken, r.CreatedAt, r.LastUsed, r.SessionID, id,
 		)
 		if err != nil {
 			return fmt.Errorf("update refresh token: %v", err)
@@ -356,7 +357,7 @@ func (c *conn) GetRefresh(id string) (storage.RefreshToken, error) {
 func getRefresh(q querier, id string) (storage.RefreshToken, error) {
 	return scanRefresh(q.QueryRow(`
 		select
-			id, client_id, scopes, nonce,
+			id, client_id, session_id, scopes, nonce,
 			claims_user_id, claims_username, claims_preferred_username,
 			claims_email, claims_email_verified,
 			claims_groups,
@@ -369,7 +370,7 @@ func getRefresh(q querier, id string) (storage.RefreshToken, error) {
 func (c *conn) ListRefreshTokens() ([]storage.RefreshToken, error) {
 	rows, err := c.Query(`
 		select
-			id, client_id, scopes, nonce,
+			id, client_id, session_id, scopes, nonce,
 			claims_user_id, claims_username, claims_preferred_username,
 			claims_email, claims_email_verified, claims_groups,
 			connector_id, connector_data,
@@ -397,7 +398,7 @@ func (c *conn) ListRefreshTokens() ([]storage.RefreshToken, error) {
 
 func scanRefresh(s scanner) (r storage.RefreshToken, err error) {
 	err = s.Scan(
-		&r.ID, &r.ClientID, decoder(&r.Scopes), &r.Nonce,
+		&r.ID, &r.ClientID, &r.SessionID, decoder(&r.Scopes), &r.Nonce,
 		&r.Claims.UserID, &r.Claims.Username, &r.Claims.PreferredUsername,
 		&r.Claims.Email, &r.Claims.EmailVerified,
 		decoder(&r.Claims.Groups),
@@ -689,13 +690,13 @@ func scanPassword(s scanner) (p storage.Password, err error) {
 func (c *conn) CreateOfflineSessions(s storage.OfflineSessions) error {
 	_, err := c.Exec(`
 		insert into offline_session (
-			user_id, conn_id, refresh, connector_data
+			session_id, user_id, conn_id, refresh, connector_data
 		)
 		values (
-			$1, $2, $3, $4
+			$1, $2, $3, $4, $5
 		);
 	`,
-		s.UserID, s.ConnID, encoder(s.Refresh), s.ConnectorData,
+		s.SessionID, s.UserID, s.ConnID, encoder(s.Refresh), s.ConnectorData,
 	)
 	if err != nil {
 		if c.alreadyExistsCheck(err) {
@@ -706,9 +707,9 @@ func (c *conn) CreateOfflineSessions(s storage.OfflineSessions) error {
 	return nil
 }
 
-func (c *conn) UpdateOfflineSessions(userID string, connID string, updater func(s storage.OfflineSessions) (storage.OfflineSessions, error)) error {
+func (c *conn) UpdateOfflineSessions(userID string, connID string, sessionID string, updater func(s storage.OfflineSessions) (storage.OfflineSessions, error)) error {
 	return c.ExecTx(func(tx *trans) error {
-		s, err := getOfflineSessions(tx, userID, connID)
+		s, err := getOfflineSessions(tx, userID, connID, sessionID)
 		if err != nil {
 			return err
 		}
@@ -722,9 +723,9 @@ func (c *conn) UpdateOfflineSessions(userID string, connID string, updater func(
 			set
 				refresh = $1,
 				connector_data = $2
-			where user_id = $3 AND conn_id = $4;
+			where user_id = $3 AND conn_id = $4 AND session_id = $5;
 		`,
-			encoder(newSession.Refresh), newSession.ConnectorData, s.UserID, s.ConnID,
+			encoder(newSession.Refresh), newSession.ConnectorData, s.UserID, s.ConnID, s.SessionID,
 		)
 		if err != nil {
 			return fmt.Errorf("update offline session: %v", err)
@@ -733,22 +734,22 @@ func (c *conn) UpdateOfflineSessions(userID string, connID string, updater func(
 	})
 }
 
-func (c *conn) GetOfflineSessions(userID string, connID string) (storage.OfflineSessions, error) {
-	return getOfflineSessions(c, userID, connID)
+func (c *conn) GetOfflineSessions(userID string, connID string, sessionID string) (storage.OfflineSessions, error) {
+	return getOfflineSessions(c, userID, connID, sessionID)
 }
 
-func getOfflineSessions(q querier, userID string, connID string) (storage.OfflineSessions, error) {
+func getOfflineSessions(q querier, userID string, connID string, sessionID string) (storage.OfflineSessions, error) {
 	return scanOfflineSessions(q.QueryRow(`
 		select
-			user_id, conn_id, refresh, connector_data
+			session_id, user_id, conn_id, refresh, connector_data
 		from offline_session
-		where user_id = $1 AND conn_id = $2;
-		`, userID, connID))
+		where user_id = $1 AND conn_id = $2 AND session_id = $3;
+		`, userID, connID, sessionID))
 }
 
 func scanOfflineSessions(s scanner) (o storage.OfflineSessions, err error) {
 	err = s.Scan(
-		&o.UserID, &o.ConnID, decoder(&o.Refresh), &o.ConnectorData,
+		&o.SessionID, &o.UserID, &o.ConnID, decoder(&o.Refresh), &o.ConnectorData,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -868,8 +869,8 @@ func (c *conn) DeletePassword(email string) error {
 }
 func (c *conn) DeleteConnector(id string) error { return c.delete("connector", "id", id) }
 
-func (c *conn) DeleteOfflineSessions(userID string, connID string) error {
-	result, err := c.Exec(`delete from offline_session where user_id = $1 AND conn_id = $2`, userID, connID)
+func (c *conn) DeleteOfflineSessions(userID string, connID string, sessionID string) error {
+	result, err := c.Exec(`delete from offline_session where user_id = $1 AND conn_id = $2 AND session_id = $3`, userID, connID, sessionID)
 	if err != nil {
 		return fmt.Errorf("delete offline_session: user_id = %s, conn_id = %s", userID, connID)
 	}

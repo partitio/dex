@@ -178,6 +178,7 @@ func cmd() *cobra.Command {
 
 			http.HandleFunc("/", a.handleIndex)
 			http.HandleFunc("/login", a.handleLogin)
+			http.HandleFunc("/logout", a.handleLogout)
 			http.HandleFunc(u.Path, a.handleCallback)
 
 			switch listenURL.Scheme {
@@ -337,4 +338,17 @@ func (a *app) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	renderToken(w, a.redirectURI, rawIDToken, accessToken, token.RefreshToken, buff.String())
+}
+
+func (a *app) handleLogout(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	u, _ := url.Parse(a.provider.Endpoint().AuthURL)
+	u.Path = "/dex/auth/logout"
+	q := u.Query()
+	q.Set("id_token_hint", r.PostForm.Get("id_token_hint"))
+	home, _ := url.Parse(a.redirectURI)
+	home.Path = ""
+	q.Set("post_logout_redirect_uri", home.String())
+	u.RawQuery = q.Encode()
+	http.Redirect(w, r, u.String(), http.StatusSeeOther)
 }
