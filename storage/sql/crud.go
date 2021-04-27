@@ -306,6 +306,14 @@ func (c *conn) CreateRefresh(r storage.RefreshToken) error {
 }
 
 func (c *conn) UpdateRefreshToken(id string, updater func(old storage.RefreshToken) (storage.RefreshToken, error)) error {
+	err := c.updateRefreshToken(id, updater)
+	if isConcurrentError(err) {
+		return c.UpdateRefreshToken(id, updater)
+	}
+	return err
+}
+
+func (c *conn) updateRefreshToken(id string, updater func(old storage.RefreshToken) (storage.RefreshToken, error)) error {
 	return c.ExecTx(func(tx *trans) error {
 		r, err := getRefresh(tx, id)
 		if err != nil {
@@ -708,6 +716,14 @@ func (c *conn) CreateOfflineSessions(s storage.OfflineSessions) error {
 }
 
 func (c *conn) UpdateOfflineSessions(userID string, connID string, sessionID string, updater func(s storage.OfflineSessions) (storage.OfflineSessions, error)) error {
+	err := c.updateOfflineSessions(userID, connID, sessionID, updater)
+	if isConcurrentError(err) {
+		return c.UpdateOfflineSessions(userID, connID, sessionID, updater)
+	}
+	return err
+}
+
+func (c *conn) updateOfflineSessions(userID string, connID string, sessionID string, updater func(s storage.OfflineSessions) (storage.OfflineSessions, error)) error {
 	return c.ExecTx(func(tx *trans) error {
 		s, err := getOfflineSessions(tx, userID, connID, sessionID)
 		if err != nil {
@@ -989,6 +1005,14 @@ func getDeviceToken(q querier, deviceCode string) (a storage.DeviceToken, err er
 }
 
 func (c *conn) UpdateDeviceToken(deviceCode string, updater func(old storage.DeviceToken) (storage.DeviceToken, error)) error {
+	err := c.updateDeviceToken(deviceCode, updater)
+	if isConcurrentError(err) {
+		return c.UpdateDeviceToken(deviceCode, updater)
+	}
+	return err
+}
+
+func (c *conn) updateDeviceToken(deviceCode string, updater func(old storage.DeviceToken) (storage.DeviceToken, error)) error {
 	return c.ExecTx(func(tx *trans) error {
 		r, err := getDeviceToken(tx, deviceCode)
 		if err != nil {
@@ -1014,4 +1038,12 @@ func (c *conn) UpdateDeviceToken(deviceCode string, updater func(old storage.Dev
 		}
 		return nil
 	})
+}
+
+func isConcurrentError(err error) bool {
+	return err != nil && (
+	// postgres
+	strings.Contains(err.Error(), "could not serialize access due to concurrent update") ||
+		// sqlite
+		strings.Contains(err.Error(), "database is locked"))
 }
