@@ -13,7 +13,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/gogo/protobuf v1.3.1 // indirect
-	github.com/golang/protobuf v1.4.2
+	github.com/golang/protobuf v1.4.3
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/securecookie v1.1.1
@@ -32,7 +32,7 @@ require (
 	github.com/partitio/atlas-app-toolkit v0.16.8
 	github.com/partitio/protoc-gen-gorm v0.20.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.4.0
+	github.com/prometheus/client_golang v1.10.0
 	github.com/russellhaering/goxmldsig v1.1.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.1.3
@@ -40,7 +40,6 @@ require (
 	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad
 	golang.org/x/net v0.0.0-20201224014010-6772e930b67b
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
-	golang.org/x/sys v0.0.0-20201201145000-ef89a241ccb3 // indirect
 	google.golang.org/api v0.26.0
 	google.golang.org/genproto v0.0.0-20200527145253-8367513e4ece
 	google.golang.org/grpc v1.37.0
